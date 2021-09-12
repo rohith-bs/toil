@@ -387,7 +387,10 @@ class ModuleDescriptor(namedtuple('ModuleDescriptor', ('dirPath', 'name', 'fromV
         filePath = os.path.abspath(module.__file__)
         filePath = filePath.split(os.path.sep)
         filePath[-1], extension = os.path.splitext(filePath[-1])
-        if not extension in ('.py', '.pyc'):
+        suffix = None
+        if extension == '.so':
+            suffix = os.path.splitext(filePath[-1])[-1]
+        elif not extension in ('.py', '.pyc'):
             raise Exception('The name of a user script/module must end in .py or .pyc.')
         if name == '__main__':
             logger.debug("Discovering real name of module")
@@ -413,8 +416,10 @@ class ModuleDescriptor(namedtuple('ModuleDescriptor', ('dirPath', 'name', 'fromV
                 # module is a subpackage
                 filePath.pop()
 
-            for package in reversed(name.split('.')):
+            for pindex, package in enumerate(reversed(name.split('.'))):
                 dirPathTail = filePath.pop()
+                if pindex == 0 and extension == ".so":
+                    package = package + suffix
                 assert dirPathTail == package
             dirPath = os.path.abspath(os.path.sep.join(filePath))
         absPrefix = os.path.abspath(sys.prefix)
