@@ -23,8 +23,11 @@ from uuid import uuid4
 
 import pytest
 
+import boto.ec2
+
+from toil.lib.aws import zone_to_region
 from toil.provisioners import cluster_factory
-from toil.provisioners.aws import get_current_aws_zone
+from toil.provisioners.aws import get_best_aws_zone
 from toil.provisioners.aws.awsProvisioner import AWSProvisioner
 from toil.test import (ToilTest,
                        integrative,
@@ -36,6 +39,7 @@ from toil.version import exactPython
 
 log = logging.getLogger(__name__)
 
+
 class AWSProvisionerBenchTest(ToilTest):
     """
     Tests for the AWS provisioner that don't actually provision anything.
@@ -43,12 +47,32 @@ class AWSProvisionerBenchTest(ToilTest):
 
     # Needs to talk to EC2 for image discovery
     @needs_aws_ec2
-    def testAMIFinding(self):
+    def test_AMI_finding(self):
         for zone in ['us-west-2a', 'eu-central-1a', 'sa-east-1b']:
             provisioner = AWSProvisioner('fakename', 'mesos', zone, 10000, None, None)
             ami = provisioner._discoverAMI()
             # Make sure we got an AMI and it looks plausible
             assert(ami.startswith('ami-'))
+
+    @needs_aws_ec2
+    def test_read_write_global_files(self):
+        """
+        Make sure the `_write_file_to_cloud()` and `_read_file_from_cloud()`
+        functions of the AWS provisioner work as intended.
+        """
+        provisioner = AWSProvisioner(f'aws-provisioner-test-{uuid4()}', 'mesos', 'us-west-2a', 50, None, None)
+        key = 'config/test.txt'
+        contents = "Hello, this is a test.".encode('utf-8')
+
+        try:
+            url = provisioner._write_file_to_cloud(key, contents=contents)
+            self.assertTrue(url.startswith("s3://"))
+
+            self.assertEqual(contents, provisioner._read_file_from_cloud(key))
+        finally:
+            # the cluster was never launched, but we need to clean up the s3 bucket
+            provisioner.destroyCluster()
+
 
 @needs_aws_ec2
 @needs_fetchable_appliance
@@ -63,8 +87,10 @@ class AbstractAWSAutoscaleTest(ToilTest):
         self.numWorkers = ['2']
         self.numSamples = 2
         self.spotBid = 0.15
-        self.zone = get_current_aws_zone()
+        self.zone = get_best_aws_zone()
         assert self.zone is not None, "Could not determine AWS availability zone to test in; is TOIL_AWS_ZONE set?"
+        # We need a boto2 connection to EC2 to check on the cluster
+        self.boto2_ec2 = boto.ec2.connect_to_region(zone_to_region(self.zone))
         # We can't dump our user script right in /tmp or /home, because hot
         # deploy refuses to zip up those whole directories. So we make sure to
         # have a subdirectory to upload the script to.
@@ -148,7 +174,7 @@ class AbstractAWSAutoscaleTest(ToilTest):
         running = True
         while running:
             # While the process is running, see if it stopped
-            running = (p.poll() == None)
+            running = (p.poll() is None)
 
             # Also collect its output
             out_data = p.stdout.read()
@@ -184,7 +210,7 @@ class AbstractAWSAutoscaleTest(ToilTest):
         if out_buffer:
             log.info('STDOUT: %s', out_buffer.decode('utf-8', errors='ignore'))
         if err_buffer:
-            log.info('STDOUT: %s', err_buffer.decode('utf-8', errors='ignore'))
+            log.info('STDERR: %s', err_buffer.decode('utf-8', errors='ignore'))
 
         if p.returncode != 0:
             # It failed
@@ -198,16 +224,13 @@ class AbstractAWSAutoscaleTest(ToilTest):
         args = [] if args is None else args
 
         command = ['toil', 'launch-cluster', '-p=aws', '-z', self.zone, f'--keyPairName={self.keyName}',
-                   '--leaderNodeType=t2.medium', self.clusterName] + args
+                   '--leaderNodeType=t2.medium', '--logDebug', self.clusterName] + args
 
         log.debug('Launching cluster: %s', command)
 
         # Try creating the cluster
         subprocess.check_call(command)
         # If we fail, tearDown will destroy the cluster.
-
-    def getMatchingRoles(self):
-        return list(self.cluster._boto2.local_roles())
 
     def launchCluster(self):
         self.createClusterUtil()
@@ -257,6 +280,7 @@ class AbstractAWSAutoscaleTest(ToilTest):
 
     def _test(self, preemptableJobs=False):
         """Does the work of the testing.  Many features' tests are thrown in here in no particular order."""
+        # Make a cluster
         self.launchCluster()
         # get the leader so we know the IP address - we don't need to wait since create cluster
         # already insures the leader is running
@@ -265,7 +289,7 @@ class AbstractAWSAutoscaleTest(ToilTest):
         self.sshUtil(['mkdir', '-p', self.scriptDir])
         self.sshUtil(['mkdir', '-p', self.dataDir])
 
-        assert len(self.getMatchingRoles()) == 1
+        assert len(self.cluster._getRoleNames()) == 1
         # --never-download prevents silent upgrades to pip, wheel and setuptools
         venv_command = ['virtualenv', '--system-site-packages', '--python', exactPython, '--never-download', self.venvDir]
         self.sshUtil(venv_command)
@@ -290,7 +314,7 @@ class AbstractAWSAutoscaleTest(ToilTest):
         log.info('Run script...')
         self._runScript(toilOptions)
 
-        assert len(self.getMatchingRoles()) == 1
+        assert len(self.cluster._getRoleNames()) == 1
 
         from boto.exception import EC2ResponseError
         volumeID = self.getRootVolID()
@@ -299,7 +323,7 @@ class AbstractAWSAutoscaleTest(ToilTest):
             # https://github.com/BD2KGenomics/toil/issues/1567
             # retry this for up to 1 minute until the volume disappears
             try:
-                self.cluster._boto2.ec2.get_all_volumes(volume_ids=[volumeID])
+                self.boto2_ec2.get_all_volumes(volume_ids=[volumeID])
                 time.sleep(10)
             except EC2ResponseError as e:
                 if e.status == 400 and 'InvalidVolume.NotFound' in e.code:
@@ -309,7 +333,7 @@ class AbstractAWSAutoscaleTest(ToilTest):
         else:
             self.fail('Volume with ID %s was not cleaned up properly' % volumeID)
 
-        assert len(self.getMatchingRoles()) == 0
+        assert len(self.cluster._getRoleNames()) == 0
 
 
 @integrative
@@ -353,7 +377,7 @@ class AWSAutoscaleTest(AbstractAWSAutoscaleTest):
         :return: volumeID
         """
         volumeID = super(AWSAutoscaleTest, self).getRootVolID()
-        rootVolume = self.cluster._boto2.ec2.get_all_volumes(volume_ids=[volumeID])[0]
+        rootVolume = self.boto2_ec2.get_all_volumes(volume_ids=[volumeID])[0]
         # test that the leader is given adequate storage
         self.assertGreaterEqual(rootVolume.size, self.requestedLeaderStorage)
         return volumeID
@@ -407,10 +431,10 @@ class AWSStaticAutoscaleTest(AWSAutoscaleTest):
         # test that workers have expected storage size
         # just use the first worker
         worker = workers[0]
-        worker = next(wait_instances_running(self.cluster._boto2.ec2, [worker]))
+        worker = next(wait_instances_running(self.boto2_ec2, [worker]))
         rootBlockDevice = worker.block_device_mapping["/dev/xvda"]
         self.assertTrue(isinstance(rootBlockDevice, BlockDeviceType))
-        rootVolume = self.cluster._boto2.ec2.get_all_volumes(volume_ids=[rootBlockDevice.volume_id])[0]
+        rootVolume = self.boto2_ec2.get_all_volumes(volume_ids=[rootBlockDevice.volume_id])[0]
         self.assertGreaterEqual(rootVolume.size, self.requestedNodeStorage)
 
     def _runScript(self, toilOptions):
@@ -421,6 +445,7 @@ class AWSStaticAutoscaleTest(AWSAutoscaleTest):
         runCommand = [self.python(), self.script(), '--fileToSort=' + self.data('sortFile')]
         runCommand.extend(toilOptions)
         self.sshUtil(runCommand)
+
 
 @integrative
 @pytest.mark.timeout(1200)
@@ -450,7 +475,6 @@ class AWSManagedAutoscaleTest(AWSAutoscaleTest):
         self.sshUtil(runCommand)
 
 
-
 @integrative
 @pytest.mark.timeout(1200)
 class AWSAutoscaleTestMultipleNodeTypes(AbstractAWSAutoscaleTest):
@@ -471,7 +495,7 @@ class AWSAutoscaleTestMultipleNodeTypes(AbstractAWSAutoscaleTest):
         os.unlink(sseKeyFile)
 
     def _runScript(self, toilOptions):
-        #Set memory requirements so that sort jobs can be run
+        # Set memory requirements so that sort jobs can be run
         # on small instances, but merge jobs must be run on large
         # instances
         toilOptions.extend(['--provisioner=aws', '--batchSystem=mesos',
