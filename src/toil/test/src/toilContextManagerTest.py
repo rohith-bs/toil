@@ -16,8 +16,7 @@ import os
 
 from toil.common import Toil, ToilContextManagerException
 from toil.job import Job
-from toil.test import get_temp_file
-from toil.test import ToilTest, slow
+from toil.test import ToilTest, get_temp_file, slow
 
 
 @slow
@@ -71,7 +70,7 @@ class HelloWorld(Job):
 
 def childFn(job):
     with job.fileStore.writeGlobalFileStream() as (fH, fileID):
-        fH.write("Hello, World!".encode('utf-8'))
+        fH.write(b"Hello, World!")
         return fileID
 
 

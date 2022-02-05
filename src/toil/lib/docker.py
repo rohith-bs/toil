@@ -190,7 +190,7 @@ def apiDockerCall(job,
         if entrypoint is None:
             entrypoint = ['/bin/bash', '-c']
         chain_params = \
-            [' '.join((quote(arg) for arg in command)) \
+            [' '.join(quote(arg) for arg in command) \
              for command in parameters]
         command = ' | '.join(chain_params)
         pipe_prefix = "set -eo pipefail && "
@@ -204,7 +204,7 @@ def apiDockerCall(job,
     # practice:
     # http://docker-py.readthedocs.io/en/stable/containers.html
     elif len(parameters) > 0 and type(parameters) is list:
-        command = ' '.join((quote(arg) for arg in parameters))
+        command = ' '.join(quote(arg) for arg in parameters)
         logger.debug("Calling docker with: " + repr(command))
 
     # If the 'parameters' lists are empty, they are respecified as None, which
@@ -399,7 +399,7 @@ def containerIsRunning(container_name: str, timeout: int = 365 * 24 * 60 * 60):
     except NotFound:
         return None
     except requests.exceptions.HTTPError as e:
-        logger.debug("Server error attempting to call container: ",
+        logger.debug("Server error attempting to call container: %s",
                      container_name)
         raise create_api_error_from_http_exception(e)
 

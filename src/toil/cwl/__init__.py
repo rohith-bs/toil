@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-from pkg_resources import get_distribution, DistributionNotFound
+
+from pkg_resources import DistributionNotFound, get_distribution
+
 from toil.version import cwltool_version
 
 logger = logging.getLogger(__name__)
@@ -27,9 +29,11 @@ def check_cwltool_version() -> None:
         installed_version = get_distribution("cwltool").version
 
         if installed_version != cwltool_version:
-            logger.warning(f"You are using cwltool version {installed_version}, which might not be compatible with "
-                           f"version {cwltool_version} used by Toil. You should consider running 'pip install cwltool=="
-                           f"{cwltool_version}' to match Toil's cwltool version.")
+            logger.warning(
+                f"You are using cwltool version {installed_version}, which might not be compatible with "
+                f"version {cwltool_version} used by Toil. You should consider running 'pip install cwltool=="
+                f"{cwltool_version}' to match Toil's cwltool version."
+            )
     except DistributionNotFound:
         logger.warning("cwltool is not installed.")
 

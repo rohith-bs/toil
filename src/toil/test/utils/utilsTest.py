@@ -16,12 +16,11 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
+from unittest.mock import patch
 
 import pytest
-from mock import patch
 
 pkg_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))  # noqa
 sys.path.insert(0, pkg_root)  # noqa
@@ -31,15 +30,16 @@ from toil import resolveEntryPoint
 from toil.common import Config, Toil
 from toil.job import Job
 from toil.lib.bioio import system
-from toil.test import (ToilTest,
-                       integrative,
-                       needs_aws_ec2,
-                       needs_cwl,
-                       needs_docker,
-                       needs_rsync3,
-                       slow,
-                       travis_test,
-                       get_temp_file)
+from toil.test import (
+    ToilTest,
+    get_temp_file,
+    integrative,
+    needs_aws_ec2,
+    needs_cwl,
+    needs_docker,
+    needs_rsync3,
+    slow
+)
 from toil.test.sort.sortTest import makeFileToSort
 from toil.utils.toilStats import getStats, processData
 from toil.utils.toilStatus import ToilStatus
@@ -55,7 +55,7 @@ class UtilsTest(ToilTest):
     """
 
     def setUp(self):
-        super(UtilsTest, self).setUp()
+        super().setUp()
         self.tempDir = self._createTempDir()
         self.tempFile = get_temp_file(rootDir=self.tempDir)
         self.outputFile = 'someSortedStuff.txt'
@@ -66,7 +66,7 @@ class UtilsTest(ToilTest):
         self.N = 1000
         makeFileToSort(self.tempFile, self.lines, self.lineLen)
         # First make our own sorted version
-        with open(self.tempFile, 'r') as fileHandle:
+        with open(self.tempFile) as fileHandle:
             self.correctSort = fileHandle.readlines()
             self.correctSort.sort()
 
@@ -139,6 +139,7 @@ class UtilsTest(ToilTest):
         # TODO: Run these for the other clouds.
         clusterName = f'cluster-utils-test{uuid.uuid4()}'
         keyName = os.getenv('TOIL_AWS_KEYNAME').strip() or 'id_rsa'
+        expected_owner = os.getenv('TOIL_OWNER_TAG') or keyName
 
         try:
             from toil.provisioners.aws.awsProvisioner import AWSProvisioner
@@ -151,12 +152,11 @@ class UtilsTest(ToilTest):
                     '--leaderNodeType=t2.medium', '--keyPairName=' + keyName, clusterName,
                     '--provisioner=aws', '--zone=us-west-2a', '--logLevel=DEBUG'])
 
-            from toil.provisioners import cluster_factory
             cluster = toil.provisioners.cluster_factory(provisioner='aws', zone='us-west-2a', clusterName=clusterName)
             leader = cluster.getLeader()
 
             # check that the leader carries the appropriate tags
-            tags = {'key1': 'value1', 'key2': 'value2', 'key3': 'value3', 'Name': clusterName, 'Owner': keyName}
+            tags = {'key1': 'value1', 'key2': 'value2', 'key3': 'value3', 'Name': clusterName, 'Owner': expected_owner}
             for key in tags:
                 self.assertEqual(leader.tags.get(key), tags[key])
         finally:
@@ -219,7 +219,7 @@ class UtilsTest(ToilTest):
         system(self.statsCommand)
 
         # Check the file is properly sorted
-        with open(self.outputFile, 'r') as fileHandle:
+        with open(self.outputFile) as fileHandle:
             l2 = fileHandle.readlines()
             self.assertEqual(self.correctSort, l2)
 
@@ -255,14 +255,13 @@ class UtilsTest(ToilTest):
         system(self.statsCommand)
 
         # Check the file is properly sorted
-        with open(self.outputFile, 'r') as fileHandle:
+        with open(self.outputFile) as fileHandle:
             l2 = fileHandle.readlines()
             self.assertEqual(self.correctSort, l2)
 
         # Delete output file
         os.remove(self.outputFile)
 
-    @travis_test
     def testUnicodeSupport(self):
         options = Job.Runner.getDefaultOptions(self._getTestJobStorePath())
         options.clean = 'always'
@@ -294,7 +293,6 @@ class UtilsTest(ToilTest):
                 s = status_fn(self.toilDir)
                 self.assertEqual(s, status, 'Status took longer than 10 seconds to fetch:  %s' % s)
 
-    @travis_test
     def testGetPIDStatus(self):
         """Test that ToilStatus.getPIDStatus() behaves as expected."""
         wf = subprocess.Popen(self.sort_workflow_cmd)
@@ -307,7 +305,6 @@ class UtilsTest(ToilTest):
         os.remove(os.path.join(self.toilDir, 'files/shared/pid.log'))
         self.check_status('QUEUED', status_fn=ToilStatus.getPIDStatus)
 
-    @travis_test
     def testGetStatusFailedToilWF(self):
         """
         Test that ToilStatus.getStatus() behaves as expected with a failing Toil workflow.

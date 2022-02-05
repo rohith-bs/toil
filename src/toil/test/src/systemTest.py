@@ -5,21 +5,17 @@ import tempfile
 from functools import partial
 
 from toil.lib.threading import cpu_count
-from toil.test import ToilTest, travis_test
+from toil.test import ToilTest
 
 
 class SystemTest(ToilTest):
-    """
-    Test various assumptions about the operating system's behavior
-    """
-
-    @travis_test
+    """Test various assumptions about the operating system's behavior."""
     def testAtomicityOfNonEmptyDirectoryRenames(self):
         for _ in range(100):
             parent = self._createTempDir(purpose='parent')
             child = os.path.join(parent, 'child')
             # Use processes (as opposed to threads) to prevent GIL from ordering things artificially
-            pool = multiprocessing.Pool()
+            pool = multiprocessing.Pool(processes=cpu_count())
             try:
                 numTasks = cpu_count() * 10
                 grandChildIds = pool.map_async(

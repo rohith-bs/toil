@@ -29,17 +29,22 @@ dependencies = ' '.join(['libffi-dev',  # For client side encryption for extras 
                          python,
                          f'{python}-dev',
                          'python3.8-distutils' if python == 'python3.8' else '',
+                         'python3.9-distutils' if python == 'python3.9' else '',
+                         # 'python3.9-venv' if python == 'python3.9' else '',
                          'python3-pip',
                          'libcurl4-openssl-dev',
                          'libssl-dev',
                          'wget',
                          'curl',
                          'openssh-server',
-                         'mesos=1.0.1-2.0.94.ubuntu1604',
                          "nodejs",  # CWL support for javascript expressions
                          'rsync',
                          'screen',
                          'build-essential',  # We need a build environment to build Singularity 3.
+                         'libarchive13',
+                         'libc6',
+                         'libseccomp2',
+                         'e2fsprogs',
                          'uuid-dev',
                          'libgpgme11-dev',
                          'libseccomp-dev',
@@ -72,7 +77,13 @@ motd = heredoc('''
 motd = ''.join(l + '\\n\\\n' for l in motd.splitlines())
 
 print(heredoc('''
+    # We can't use a newer Ubuntu until we no longer need Mesos
     FROM ubuntu:16.04
+
+    ARG TARGETARCH
+
+    # make sure we don't use too new a version of setuptools (which can get out of sync with poetry and break things)
+    ENV SETUPTOOLS_USE_DISTUTILS=stdlib
 
     RUN apt-get -y update --fix-missing && apt-get -y upgrade && apt-get -y install apt-transport-https ca-certificates software-properties-common && apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -88,37 +99,30 @@ print(heredoc('''
     RUN apt-get -y update --fix-missing && \
         DEBIAN_FRONTEND=noninteractive apt-get -y upgrade && \
         DEBIAN_FRONTEND=noninteractive apt-get -y install {dependencies} && \
+        if [ $TARGETARCH = amd64 ] ; then DEBIAN_FRONTEND=noninteractive apt-get -y install mesos=1.0.1-2.0.94.ubuntu1604 ; fi && \
         apt-get clean && \
         rm -rf /var/lib/apt/lists/*
 
-    RUN wget -q https://dl.google.com/go/go1.13.3.linux-amd64.tar.gz && \
-        tar xf go1.13.3.linux-amd64.tar.gz && \
-        rm go1.13.3.linux-amd64.tar.gz && \
-        mv go/bin/* /usr/bin/ && \
-        mv go /usr/local/
+    # Install a particular old Debian Sid Singularity from somewhere.
+    # The dependencies it thinks it needs aren't really needed and aren't
+    # available here.
+    ADD singularity-sources.tsv /etc/singularity/singularity-sources.tsv
+    RUN wget "$(cat /etc/singularity/singularity-sources.tsv | grep "^$TARGETARCH" | cut -f3)" && \
+        (dpkg -i singularity-container_3*.deb || true) && \
+        dpkg --force-depends --configure -a && \
+        sed -i 's/containernetworking-plugins, //' /var/lib/dpkg/status && \
+        sed -i 's!bind path = /etc/localtime!#bind path = /etc/localtime!g' /etc/singularity/singularity.conf && \
+        mkdir -p /usr/local/libexec/toil && \
+        mv /usr/bin/singularity /usr/local/libexec/toil/singularity-real \
+        && /usr/local/libexec/toil/singularity-real version
 
-    # Build Singularity, but only keep the binaries and scrap the GOPATH to
-    # save space. Hide its binary so we can wrap it.
-    RUN mkdir -p $(go env GOPATH)/src/github.com/sylabs && \
-        cd $(go env GOPATH)/src/github.com/sylabs && \
-        git clone https://github.com/sylabs/singularity.git && \
-        cd singularity && \
-        git checkout v3.4.2 && \
-        ./mconfig && \
-        cd ./builddir && \
-        make -j4 && \
-        make install && \
-        cd && \
-        rm -Rf $(go env GOPATH) \
-        && mkdir -p /usr/local/libexec/toil && \
-        mv /usr/local/bin/singularity /usr/local/libexec/toil/singularity-real
     RUN mkdir /root/.ssh && \
         chmod 700 /root/.ssh
 
     ADD waitForKey.sh /usr/bin/waitForKey.sh
 
     ADD customDockerInit.sh /usr/bin/customDockerInit.sh
-    
+
     ADD singularity-wrapper.sh /usr/local/bin/singularity
 
     RUN chmod 777 /usr/bin/waitForKey.sh && chmod 777 /usr/bin/customDockerInit.sh && chmod 777 /usr/local/bin/singularity
@@ -127,13 +131,13 @@ print(heredoc('''
     RUN sed -i "s/platform.linux_distribution()/('Ubuntu', '16.04', 'xenial')/g" /usr/lib/python3/dist-packages/pip/download.py
 
     # The stock pip is too old and can't install from sdist with extras
-    RUN {pip} install --upgrade pip==21.0.1
+    RUN {pip} install --upgrade pip==21.3.1
 
     # Default setuptools is too old
-    RUN {pip} install --upgrade setuptools==45
+    RUN {pip} install --upgrade setuptools==59.7.0
 
     # Include virtualenv, as it is still the recommended way to deploy pipelines
-    RUN {pip} install --upgrade virtualenv==20.0.
+    RUN {pip} install --upgrade virtualenv==20.0.17
 
     # Install s3am (--never-download prevents silent upgrades to pip, wheel and setuptools)
     RUN virtualenv --python {python} --never-download /home/s3am \
@@ -141,9 +145,10 @@ print(heredoc('''
         && ln -s /home/s3am/bin/s3am /usr/local/bin/
 
     # Install statically linked version of docker client
-    RUN curl https://download.docker.com/linux/static/stable/x86_64/docker-18.06.1-ce.tgz \
-         | tar -xvzf - --transform='s,[^/]*/,,g' -C /usr/local/bin/ \
-         && chmod u+x /usr/local/bin/docker
+    RUN curl https://download.docker.com/linux/static/stable/$(if [ $TARGETARCH = amd64 ] ; then echo x86_64 ; else echo aarch64 ; fi)/docker-18.06.1-ce.tgz \
+        | tar -xvzf - --transform='s,[^/]*/,,g' -C /usr/local/bin/ \
+        && chmod u+x /usr/local/bin/docker \
+        && /usr/local/bin/docker -v
 
     # Fix for Mesos interface dependency missing on ubuntu
     RUN {pip} install protobuf==3.0.0

@@ -83,7 +83,7 @@ tests=src/toil/test
 cov="--cov=toil"
 extras=
 # You can say make develop packages=xxx to install packages in the same Python
-# environemnt as Toil itself without creating dependency conflicts with Toil
+# environment as Toil itself without creating dependency conflicts with Toil
 packages=
 sdist_name:=toil-$(shell python version_template.py distVersion).tar.gz
 
@@ -96,9 +96,11 @@ develop: check_venv
 	pip install -e .$(extras) $(packages)
 
 clean_develop: check_venv
-	- pip uninstall -y toil
 	- rm -rf src/*.egg-info
 	- rm src/toil/version.py
+
+uninstall:
+	- pip uninstall -y toil
 
 sdist: dist/$(sdist_name)
 
@@ -116,25 +118,21 @@ clean_sdist:
 	- rm -rf dist
 	- rm src/toil/version.py
 
-# We always claim to be Travis, so that local test runs will not skip Travis tests.
 # Setting SET_OWNER_TAG will tag cloud resources so that UCSC's cloud murder bot won't kill them.
 test: check_venv check_build_reqs
-	TRAVIS=true TOIL_OWNER_TAG="shared" \
+	TOIL_OWNER_TAG="shared" \
 	    python -m pytest --durations=0 --log-level DEBUG --log-cli-level INFO -r s $(cov) $(tests)
 
 
 # This target will skip building docker and all docker based tests
-# these are our travis tests; rename?
 test_offline: check_venv check_build_reqs
 	@printf "$(cyan)All docker related tests will be skipped.$(normal)\n"
 	TOIL_SKIP_DOCKER=True \
-	TRAVIS=true \
-	    python -m pytest -vv --timeout=530 --log-level DEBUG --log-cli-level INFO $(cov) $(tests)
+	    python -m pytest -vv --timeout=600 --log-level DEBUG --log-cli-level INFO $(cov) $(tests)
 
 ifdef TOIL_DOCKER_REGISTRY
 
 docker_image:=$(TOIL_DOCKER_REGISTRY)/$(TOIL_DOCKER_NAME)
-
 grafana_image:=$(TOIL_DOCKER_REGISTRY)/toil-grafana
 prometheus_image:=$(TOIL_DOCKER_REGISTRY)/toil-prometheus
 mtail_image:=$(TOIL_DOCKER_REGISTRY)/toil-mtail
@@ -155,7 +153,7 @@ docker: docker/Dockerfile
 
 	@set -ex \
 	; cd docker \
-	; docker build --tag=$(docker_image):$(TOIL_DOCKER_TAG) -f Dockerfile .
+	; docker buildx build --platform linux/amd64,linux/arm64 --tag=$(docker_image):$(TOIL_DOCKER_TAG) -f Dockerfile .
 
 	@set -ex \
 	; cd dashboard/prometheus \
@@ -169,7 +167,6 @@ docker: docker/Dockerfile
 	; cd dashboard/mtail \
 	; docker build --tag=$(mtail_image):$(TOIL_DOCKER_TAG) -f Dockerfile .
 
-
 docker/$(sdist_name): dist/$(sdist_name)
 	cp $< $@
 
@@ -182,7 +179,7 @@ clean_docker:
 
 push_docker: docker
 	# Weird if logic is so we fail if all the pushes fail
-	for i in $$(seq 1 6); do if [[ $$i == "6" ]] ; then exit 1 ; fi ; docker push $(docker_image):$(TOIL_DOCKER_TAG) && break || sleep 60; done
+	cd docker ; for i in $$(seq 1 6); do if [[ $$i == "6" ]] ; then exit 1 ; fi ; docker buildx build --platform linux/amd64,linux/arm64 --push --tag=$(docker_image):$(TOIL_DOCKER_TAG) -f Dockerfile . && break || sleep 60; done
 	for i in $$(seq 1 6); do if [[ $$i == "6" ]] ; then exit 1 ; fi ; docker push $(grafana_image):$(TOIL_DOCKER_TAG) && break || sleep 60; done
 	for i in $$(seq 1 6); do if [[ $$i == "6" ]] ; then exit 1 ; fi ; docker push $(prometheus_image):$(TOIL_DOCKER_TAG) && break || sleep 60; done
 	for i in $$(seq 1 6); do if [[ $$i == "6" ]] ; then exit 1 ; fi ; docker push $(mtail_image):$(TOIL_DOCKER_TAG) && break || sleep 60; done
@@ -252,9 +249,18 @@ format: $(wildcard src/toil/cwl/*.py)
 mypy:
 	$(CURDIR)/contrib/admin/mypy-with-ignore.py
 
+pydocstyle_report.txt: src/toil
+	pydocstyle setup.py $^ > $@ 2>&1 || true
+
+diff_pydocstyle_report: pydocstyle_report.txt
+	diff-quality --compare-branch=master --violations=pycodestyle --fail-under=100 $^
+
 diff_mypy:
 	mypy --cobertura-xml-report . src/toil || true
 	diff-cover --fail-under=100 cobertura.xml
+
+pyupgrade: $(PYSOURCES)
+	pyupgrade --exit-zero-even-if-changed --py36-plus $^
 
 flake8: $(PYSOURCES)
 	flake8 --ignore=E501,W293,W291,E265,E302,E722,E126,E303,E261,E201,E202,W503,W504,W391,E128,E301,E127,E502,E129,E262,E111,E117,E306,E203,E231,E226,E741,E122,E251,E305,E701,E222,E225,E241,E305,E123,E121,E703,E704,E125,E402 $^

@@ -17,9 +17,10 @@ import shutil
 import subprocess
 import unittest
 
-from toil.test import ToilTest, slow, travis_test
 from toil.lib.resources import glob
+from toil.test import ToilTest, slow
 from toil.version import python
+
 logger = logging.getLogger(__name__)
 
 class ToilDebugFileTest(ToilTest):
@@ -58,7 +59,7 @@ class ToilDebugFileTest(ToilTest):
         jobstoreFileContents = os.path.abspath('jobstore_files.txt')
         files = []
         match = 0
-        with open(jobstoreFileContents, 'r') as f:
+        with open(jobstoreFileContents) as f:
             for line in f:
                 files.append(line.strip())
         for xfile in files:
@@ -73,13 +74,11 @@ class ToilDebugFileTest(ToilTest):
         os.remove(jobstoreFileContents)
 
     # expected run time = 4s
-    @travis_test
     def testFetchJobStoreFiles(self):
         """Test toilDebugFile.fetchJobStoreFiles() without using symlinks."""
         self.fetchFiles(symLink=False)
 
     # expected run time = 4s
-    @travis_test
     def testFetchJobStoreFilesWSymlinks(self):
         """Test toilDebugFile.fetchJobStoreFiles() using symlinks."""
         self.fetchFiles(symLink=True)

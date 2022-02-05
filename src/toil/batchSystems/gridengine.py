@@ -16,9 +16,11 @@ import math
 import os
 import time
 from pipes import quote
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
-from toil.batchSystems.abstractGridEngineBatchSystem import AbstractGridEngineBatchSystem
+from toil.batchSystems.abstractGridEngineBatchSystem import (
+    AbstractGridEngineBatchSystem,
+)
 from toil.lib.misc import CalledProcessErrorStderr, call_command
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,7 @@ class GridEngineBatchSystem(AbstractGridEngineBatchSystem):
         def getRunningJobIDs(self):
             times = {}
             with self.runningJobsLock:
-                currentjobs = dict((str(self.batchJobIDs[x][0]), x) for x in self.runningJobs)
+                currentjobs = {str(self.batchJobIDs[x][0]): x for x in self.runningJobs}
             stdout = call_command(["qstat"])
 
             for currline in stdout.split('\n'):
@@ -138,8 +140,10 @@ class GridEngineBatchSystem(AbstractGridEngineBatchSystem):
                     if arg.startswith(("vf=", "hvmem=", "-pe")):
                         raise ValueError("Unexpected CPU, memory or pe specifications in TOIL_GRIDGENGINE_ARGs: %s" % arg)
                 qsubline.extend(sgeArgs)
-            if os.getenv('TOIL_GRIDENGINE_PE') is not None:
-                peCpu = int(math.ceil(cpu)) if cpu is not None else 1
+            # If cpu == 1 (or None) then don't add PE env variable to the qsub command.
+            #               This will allow for use of the serial queue for these jobs.
+            if (os.getenv('TOIL_GRIDENGINE_PE') is not None) and (cpu is not None) and (cpu > 1) :
+                peCpu = int(math.ceil(cpu))
                 qsubline.extend(['-pe', os.getenv('TOIL_GRIDENGINE_PE'), str(peCpu)])
             elif (cpu is not None) and (cpu > 1):
                 raise RuntimeError("must specify PE in TOIL_GRIDENGINE_PE environment variable when using multiple CPUs. "

@@ -16,21 +16,21 @@ import logging
 import os
 import sys
 from functools import reduce
+from typing import Any, Dict, List, Optional, Set
 
 from toil.common import Config, Toil, parser_with_common_options
-from toil.job import Job, JobException, ServiceJobDescription
+from toil.job import JobDescription, JobException, ServiceJobDescription
 from toil.jobStores.abstractJobStore import (NoSuchFileException,
                                              NoSuchJobStoreException)
 from toil.statsAndLogging import StatsAndLogging, set_logging_from_options
-
-from typing import List, Dict, Set, Any, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class ToilStatus:
     """Tool for reporting on job status."""
-    def __init__(self, jobStoreName: str, specifiedJobs: Optional[List[Job]] = None):
+
+    def __init__(self, jobStoreName: str, specifiedJobs: Optional[List[str]] = None):
         self.jobStoreName = jobStoreName
         self.jobStore = Toil.resumeJobStore(jobStoreName)
 
@@ -47,22 +47,32 @@ class ToilStatus:
         print("# This graph was created from job-store: %s" % self.jobStoreName)
 
         # Make job IDs to node names map
-        jobsToNodeNames = dict(enumerate(map(lambda job: job.jobStoreID, self.jobsToReport)))
+        jobsToNodeNames: Dict[str, str] = dict(
+            map(lambda job: (str(job.jobStoreID), job.jobName), self.jobsToReport)
+        )
 
         # Print the nodes
         for job in set(self.jobsToReport):
-            print('%s [label="%s %s"];' % (
-                jobsToNodeNames[job.jobStoreID], job.jobName, job.jobStoreID))
+            print(
+                '{} [label="{} {}"];'.format(
+                    jobsToNodeNames[str(job.jobStoreID)], job.jobName, job.jobStoreID
+                )
+            )
 
         # Print the edges
         for job in set(self.jobsToReport):
             for level, jobList in enumerate(job.stack):
                 for childJob in jobList:
                     # Check, b/c successor may be finished / not in the set of jobs
-                    if childJob.jobStoreID in jobsToNodeNames:
-                        print('%s -> %s [label="%i"];' % (
-                            jobsToNodeNames[job.jobStoreID],
-                            jobsToNodeNames[childJob.jobStoreID], level))
+                    if childJob in jobsToNodeNames:
+                        print(
+                            '%s -> %s [label="%i"];'
+                            % (
+                                jobsToNodeNames[str(job.jobStoreID)],
+                                jobsToNodeNames[childJob],
+                                level,
+                            )
+                        )
         print("}")
 
     def printJobLog(self) -> None:
@@ -88,7 +98,9 @@ class ToilStatus:
     def printAggregateJobStats(self, properties: List[str], childNumber: int) -> None:
         """Prints a job's ID, log file, remaining tries, and other properties."""
         for job in self.jobsToReport:
-            lf = lambda x: "%s:%s" % (x, str(x in properties))
+
+            def lf(x: str) -> str:
+                return "{}:{}".format(x, str(x in properties))
             print("\t".join(("JOB:%s" % job,
                              "LOG_FILE:%s" % job.logJobStoreFileID,
                              "TRYS_REMAINING:%i" % job.remainingTryCount,
@@ -106,9 +118,9 @@ class ToilStatus:
         hasChildren = []
         readyToRun = []
         zombies = []
-        hasLogFile = []
+        hasLogFile: List[JobDescription] = []
         hasServices = []
-        services = []
+        services: List[ServiceJobDescription] = []
         properties = set()
 
         for job in self.jobsToReport:
@@ -162,7 +174,7 @@ class ToilStatus:
             return 'QUEUED'
 
         try:
-            with jobstore.readSharedFileStream('pid.log') as pidFile:
+            with jobstore.read_shared_file_stream('pid.log') as pidFile:
                 pid = int(pidFile.read())
                 try:
                     os.kill(pid, 0)  # Does not kill process when 0 is passed.
@@ -196,19 +208,19 @@ class ToilStatus:
             return 'QUEUED'
 
         try:
-            with jobstore.readSharedFileStream('succeeded.log') as successful:
+            with jobstore.read_shared_file_stream('succeeded.log') as successful:
                 pass
             return 'COMPLETED'
         except NoSuchFileException:
             try:
-                with jobstore.readSharedFileStream('failed.log') as failed:
+                with jobstore.read_shared_file_stream('failed.log') as failed:
                     pass
                 return 'ERROR'
             except NoSuchFileException:
                 pass
         return 'RUNNING'
 
-    def fetchRootJob(self) -> Job:
+    def fetchRootJob(self) -> JobDescription:
         """
         Fetches the root job from the jobStore that provides context for all other jobs.
 
@@ -220,12 +232,12 @@ class ToilStatus:
         :raises JobException: if the root job does not exist.
         """
         try:
-            return self.jobStore.loadRootJob()
+            return self.jobStore.load_root_job()
         except JobException:
             print('Root job is absent. The workflow has may have completed successfully.', file=sys.stderr)
             raise
 
-    def fetchUserJobs(self, jobs: List[Job]) -> List[Job]:
+    def fetchUserJobs(self, jobs: List[str]) -> List[JobDescription]:
         """
         Takes a user input array of jobs, verifies that they are in the jobStore
         and returns the array of jobsToReport.
@@ -236,20 +248,25 @@ class ToilStatus:
         jobsToReport = []
         for jobID in jobs:
             try:
-                jobsToReport.append(self.jobStore.load(jobID))
+                jobsToReport.append(self.jobStore.load_job(jobID))
             except JobException:
                 print('The job %s could not be found.' % jobID, file=sys.stderr)
                 raise
         return jobsToReport
 
-    def traverseJobGraph(self, rootJob: Job, jobsToReport: Optional[List[Job]] = None, 
-                    foundJobStoreIDs: Optional[Set[int]] = None) -> List[Job]:
+    def traverseJobGraph(
+        self,
+        rootJob: JobDescription,
+        jobsToReport: Optional[List[JobDescription]] = None,
+        foundJobStoreIDs: Optional[Set[str]] = None,
+    ) -> List[JobDescription]:
         """
         Find all current jobs in the jobStore and return them as an Array.
 
-        :param jobNode rootJob: The root job of the workflow.
+        :param rootJob: The root job of the workflow.
         :param list jobsToReport: A list of jobNodes to be added to and returned.
-        :param set foundJobStoreIDs: A set of jobStoreIDs used to keep track of jobStoreIDs encountered in traversal.
+        :param set foundJobStoreIDs: A set of jobStoreIDs used to keep track of
+            jobStoreIDs encountered in traversal.
         :returns jobsToReport: The list of jobs currently in the job graph.
         """
         if jobsToReport is None:
@@ -258,25 +275,25 @@ class ToilStatus:
         if foundJobStoreIDs is None:
             foundJobStoreIDs = set()
 
-        if rootJob.jobStoreID in foundJobStoreIDs:
+        if str(rootJob.jobStoreID) in foundJobStoreIDs:
             return jobsToReport
 
-        foundJobStoreIDs.add(rootJob.jobStoreID)
+        foundJobStoreIDs.add(str(rootJob.jobStoreID))
         jobsToReport.append(rootJob)
         # Traverse jobs in stack
         for jobs in rootJob.stack:
             for successorJobStoreID in jobs:
-                if successorJobStoreID not in foundJobStoreIDs and self.jobStore.exists(successorJobStoreID):
-                    self.traverseJobGraph(self.jobStore.load(successorJobStoreID), jobsToReport, foundJobStoreIDs)
+                if successorJobStoreID not in foundJobStoreIDs and self.jobStore.job_exists(successorJobStoreID):
+                    self.traverseJobGraph(self.jobStore.load_job(successorJobStoreID), jobsToReport, foundJobStoreIDs)
 
         # Traverse service jobs
         for jobs in rootJob.services:
             for serviceJobStoreID in jobs:
-                if self.jobStore.exists(serviceJobStoreID):
+                if self.jobStore.job_exists(serviceJobStoreID):
                     if serviceJobStoreID in foundJobStoreIDs:
                         raise RuntimeError('Service job was unexpectedly found while traversing ')
                     foundJobStoreIDs.add(serviceJobStoreID)
-                    jobsToReport.append(self.jobStore.load(serviceJobStoreID))
+                    jobsToReport.append(self.jobStore.load_job(serviceJobStoreID))
 
         return jobsToReport
 

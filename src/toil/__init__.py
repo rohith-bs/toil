@@ -20,6 +20,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 import requests
 from pytz import timezone
@@ -28,6 +29,9 @@ from docker.errors import ImageNotFound
 from toil.lib.memoize import memoize
 from toil.lib.retry import retry
 from toil.version import currentCommit
+
+if TYPE_CHECKING:
+    from toil.common import Config
 
 log = logging.getLogger(__name__)
 
@@ -99,9 +103,10 @@ def which(cmd, mode=os.F_OK | os.X_OK, path=None):
     return None
 
 
-def toilPackageDirPath():
+def toilPackageDirPath() -> str:
     """
-    Returns the absolute path of the directory that corresponds to the top-level toil package.
+    Return the absolute path of the directory that corresponds to the top-level toil package.
+
     The return value is guaranteed to end in '/toil'.
     """
     result = os.path.dirname(os.path.realpath(__file__))
@@ -161,7 +166,7 @@ def physicalDisk(directory: str) -> int:
     return diskStats.f_frsize * diskStats.f_bavail
 
 
-def applianceSelf(forceDockerAppliance=False):
+def applianceSelf(forceDockerAppliance: bool = False) -> str:
     """
     Returns the fully qualified name of the Docker image to start Toil appliance containers from.
     The result is determined by the current version of Toil and three environment variables:
@@ -238,16 +243,14 @@ def _check_custom_bash_cmd(cmd_str):
     assert not re.search(r'[\n\r\t]', cmd_str), f'"{cmd_str}" contains invalid characters (newline and/or tab).'
 
 
-def lookupEnvVar(name, envName, defaultValue):
+def lookupEnvVar(name: str, envName: str, defaultValue: str) -> str:
     """
-    Use this for looking up environment variables that control Toil and are important enough to
-    log the result of that lookup.
+    Look up environment variables that control Toil and log the result.
 
-    :param str name: the human readable name of the variable
-    :param str envName: the name of the environment variable to lookup
-    :param str defaultValue: the fall-back value
+    :param name: the human readable name of the variable
+    :param envName: the name of the environment variable to lookup
+    :param defaultValue: the fall-back value
     :return: the value of the environment variable or the default value the variable is not set
-    :rtype: str
     """
     try:
         value = os.environ[envName]
@@ -259,17 +262,16 @@ def lookupEnvVar(name, envName, defaultValue):
         return value
 
 
-def checkDockerImageExists(appliance):
+def checkDockerImageExists(appliance: str) -> str:
     """
-    Attempts to check a url registryName for the existence of a docker image with a given tag.
+    Attempt to check a url registryName for the existence of a docker image with a given tag.
 
-    :param str appliance: The url of a docker image's registry (with a tag) of the form:
-                          'quay.io/<repo_path>:<tag>' or '<repo_path>:<tag>'.
-                          Examples: 'quay.io/ucsc_cgl/toil:latest', 'ubuntu:latest', or
-                          'broadinstitute/genomes-in-the-cloud:2.0.0'.
+    :param appliance: The url of a docker image's registry (with a tag) of the form:
+                      'quay.io/<repo_path>:<tag>' or '<repo_path>:<tag>'.
+                      Examples: 'quay.io/ucsc_cgl/toil:latest', 'ubuntu:latest', or
+                      'broadinstitute/genomes-in-the-cloud:2.0.0'.
     :return: Raises an exception if the docker image cannot be found or is invalid.  Otherwise, it
              will return the appliance string.
-    :rtype: str
     """
     if currentCommit in appliance:
         return appliance
@@ -355,8 +357,11 @@ class ApplianceImageNotFound(ImageNotFound):
                "'quay.io/ucsc_cgl/toil:latest', 'ubuntu:latest', or "
                "'broadinstitute/genomes-in-the-cloud:2.0.0'."
                "" % (origAppliance, url, str(statusCode)))
-        super(ApplianceImageNotFound, self).__init__(msg)
+        super().__init__(msg)
 
+# Cache images we know exist so we don't have to ask the registry about them
+# all the time.
+KNOWN_EXTANT_IMAGES = set()
 
 def requestCheckRegularDocker(origAppliance, registryName, imageName, tag):
     """
@@ -379,12 +384,18 @@ def requestCheckRegularDocker(origAppliance, registryName, imageName, tag):
     :param str tag: The tag used at that docker image's registry.  e.g. "latest"
     :return: Return True if match found.  Raise otherwise.
     """
+
+    if origAppliance in KNOWN_EXTANT_IMAGES:
+        # Check the cache first
+        return origAppliance
+
     ioURL = 'https://{webhost}/v2/{pathName}/manifests/{tag}' \
             ''.format(webhost=registryName, pathName=imageName, tag=tag)
     response = requests.head(ioURL)
     if not response.ok:
         raise ApplianceImageNotFound(origAppliance, ioURL, response.status_code)
     else:
+        KNOWN_EXTANT_IMAGES.add(origAppliance)
         return origAppliance
 
 
@@ -400,25 +411,31 @@ def requestCheckDockerIo(origAppliance, imageName, tag):
     :param str tag: The tag used at that docker image's registry.  e.g. "latest"
     :return: Return True if match found.  Raise otherwise.
     """
+
+    if origAppliance in KNOWN_EXTANT_IMAGES:
+        # Check the cache first
+        return origAppliance
+
     # only official images like 'busybox' or 'ubuntu'
     if '/' not in imageName:
         imageName = 'library/' + imageName
 
     token_url = 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:{repo}:pull'.format(
         repo=imageName)
-    requests_url = 'https://registry-1.docker.io/v2/{repo}/manifests/{tag}'.format(repo=imageName, tag=tag)
+    requests_url = f'https://registry-1.docker.io/v2/{imageName}/manifests/{tag}'
 
     token = requests.get(token_url)
     jsonToken = token.json()
     bearer = jsonToken["token"]
-    response = requests.head(requests_url, headers={'Authorization': 'Bearer {}'.format(bearer)})
+    response = requests.head(requests_url, headers={'Authorization': f'Bearer {bearer}'})
     if not response.ok:
         raise ApplianceImageNotFound(origAppliance, requests_url, response.status_code)
     else:
+        KNOWN_EXTANT_IMAGES.add(origAppliance)
         return origAppliance
 
 
-def logProcessContext(config):
+def logProcessContext(config: "Config") -> None:
     # toil.version.version (string) cannot be imported at top level because it conflicts with
     # toil.version (module) and Sphinx doesn't like that.
     from toil.version import version
@@ -472,7 +489,7 @@ try:
         respecting the Boto 3 config files, even when parts of the app still use
         Boto 2.
 
-        This class also handles cacheing credentials in multi-process environments
+        This class also handles caching credentials in multi-process environments
         to avoid loads of processes swamping the EC2 metadata service.
         """
 
@@ -496,14 +513,14 @@ try:
                 # We will backend into a boto3 resolver for getting credentials.
                 # Make sure to enable boto3's own caching, so we can share that
                 # cache with pure boto3 code elsewhere in Toil.
-                # Keep synced with toil.lib.ec2.establish_boto3_session
+                # Keep synced with toil.lib.aws.session.establish_boto3_session
                 self._boto3_resolver = create_credential_resolver(Session(profile=profile_name), cache=JSONFileCache())
             else:
                 # We will use the normal flow
                 self._boto3_resolver = None
 
             # Pass along all the arguments
-            super(BotoCredentialAdapter, self).__init__(name, access_key=access_key,
+            super().__init__(name, access_key=access_key,
                                                         secret_key=secret_key, security_token=security_token,
                                                         profile_name=profile_name, **kwargs)
 
@@ -521,7 +538,7 @@ try:
             else:
                 # We're not on AWS, or they passed a key, or we're anonymous.
                 # Use the normal route; our credentials shouldn't expire.
-                super(BotoCredentialAdapter, self).get_credentials(access_key=access_key,
+                super().get_credentials(access_key=access_key,
                                                                    secret_key=secret_key, security_token=security_token,
                                                                    profile_name=profile_name)
 
@@ -598,7 +615,7 @@ try:
             while True:
                 log.debug('Attempting to read cached credentials from %s.', path)
                 try:
-                    with open(path, 'r') as f:
+                    with open(path) as f:
                         content = f.read()
                         if content:
                             record = content.split('\n')
@@ -611,14 +628,24 @@ try:
                             log.debug('%s is empty. Credentials are not temporary.', path)
                             self._obtain_credentials_from_boto3()
                             return
-                except IOError as e:
+                except OSError as e:
                     if e.errno == errno.ENOENT:
                         log.debug('Cached credentials are missing.')
                         dir_path = os.path.dirname(path)
                         if not os.path.exists(dir_path):
                             log.debug('Creating parent directory %s', dir_path)
-                            # A race would be ok at this point
-                            os.makedirs(dir_path, exist_ok=True)
+                            try:
+                                # A race would be ok at this point
+                                os.makedirs(dir_path, exist_ok=True)
+                            except OSError as e2:
+                                if e2.errno == errno.EROFS:
+                                    # Sometimes we don't actually have write access to ~.
+                                    # We may be running in a non-writable Toil container.
+                                    # We should just go get our own credentials
+                                    log.debug('Cannot use the credentials cache because we are working on a read-only filesystem.')
+                                    self._obtain_credentials_from_boto3()
+                                else:
+                                    raise
                     else:
                         raise
                 else:
@@ -648,7 +675,7 @@ try:
                         os.close(fd)
                         fd = None
                         log.debug('Failed to obtain credentials, removing %s.', tmp_path)
-                        # This unblocks the loosers.
+                        # This unblocks the losers.
                         os.unlink(tmp_path)
                         # Bail out. It's too likely to happen repeatedly
                         raise
@@ -659,7 +686,7 @@ try:
                             log.debug('Credentials are not temporary.  Leaving %s empty and renaming it to %s.',
                                       tmp_path, path)
                             # No need to actually cache permanent credentials,
-                            # because we hnow we aren't getting them from the
+                            # because we know we aren't getting them from the
                             # metadata server or by assuming a role. Those both
                             # give temporary credentials.
                         else:
