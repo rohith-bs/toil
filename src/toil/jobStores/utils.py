@@ -99,7 +99,7 @@ class WritablePipe(ABC):
         :param str errors: an optional string that specifies how encoding errors are to be handled. Errors
                 are the same as for open(). Defaults to 'strict' when an encoding is specified.
         """
-        super(WritablePipe, self).__init__()
+        super().__init__()
         self.encoding = encoding
         self.errors = errors
         self.readable_fh = None
@@ -115,9 +115,9 @@ class WritablePipe(ABC):
         return self.writable
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        # Closeing the writable end will send EOF to the readable and cause the reader thread
+        # Closing the writable end will send EOF to the readable and cause the reader thread
         # to finish.
-        # TODO: Can close() fail? If so, whould we try and clean up after the reader?
+        # TODO: Can close() fail? If so, would we try and clean up after the reader?
         self.writable.close()
         try:
             if self.thread is not None:
@@ -216,7 +216,7 @@ class ReadablePipe(ABC):
         try:
             with os.fdopen(self.writable_fh, 'wb') as writable:
                 self.writeTo(writable)
-        except IOError as e:
+        except OSError as e:
             # The other side of the pipe may have been closed by the
             # reading thread, which is OK.
             if e.errno != errno.EPIPE:
@@ -232,7 +232,7 @@ class ReadablePipe(ABC):
         :param str errors: an optional string that specifies how encoding errors are to be handled. Errors
                 are the same as for open(). Defaults to 'strict' when an encoding is specified.
         """
-        super(ReadablePipe, self).__init__()
+        super().__init__()
         self.encoding = encoding
         self.errors = errors
         self.writable_fh = None
@@ -286,7 +286,7 @@ class ReadableTransformingPipe(ReadablePipe):
     The :meth:`.transform` method runs in its own thread, and should move data
     chunk by chunk instead of all at once. It should finish normally if it
     encounters either an EOF on the readable, or a :class:`BrokenPipeError` on
-    the writable. This means tat it should make sure to actually catch a
+    the writable. This means that it should make sure to actually catch a
     :class:`BrokenPipeError` when writing.
 
     See also: :class:`toil.lib.misc.WriteWatchingStream`.
@@ -302,7 +302,7 @@ class ReadableTransformingPipe(ReadablePipe):
         :param str errors: an optional string that specifies how encoding errors are to be handled. Errors
                 are the same as for open(). Defaults to 'strict' when an encoding is specified.
         """
-        super(ReadableTransformingPipe, self).__init__(encoding=encoding, errors=errors)
+        super().__init__(encoding=encoding, errors=errors)
         self.source = source
 
     @abstractmethod

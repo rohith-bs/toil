@@ -16,11 +16,10 @@ import json
 import logging
 import os
 import time
-
-from argparse import ArgumentParser
-from threading import Event, Thread
+from argparse import ArgumentParser, Namespace
 from logging.handlers import RotatingFileHandler
-from typing import List, Any, Optional, Union, TextIO, BinaryIO, Callable, TYPE_CHECKING
+from threading import Event, Thread
+from typing import TYPE_CHECKING, Any, BinaryIO, Callable, List, Optional, TextIO, Union
 
 from toil.lib.expando import Expando
 from toil.lib.resources import get_total_cpu_time
@@ -174,15 +173,15 @@ class StatsAndLogging:
         while True:
             # This is a indirect way of getting a message to the thread to exit
             if stop.is_set():
-                jobStore.readStatsAndLogging(callback)
+                jobStore.read_logs(callback)
                 break
-            if jobStore.readStatsAndLogging(callback) == 0:
+            if jobStore.read_logs(callback) == 0:
                 time.sleep(0.5)  # Avoid cycling too fast
 
         # Finish the stats file
         text = json.dumps(dict(total_time=str(time.time() - startTime),
                                total_clock=str(get_total_cpu_time() - startClock)), ensure_ascii=True)
-        jobStore.writeStatsAndLogging(text)
+        jobStore.write_logs(text)
 
     def check(self) -> None:
         """
@@ -245,7 +244,7 @@ def configure_root_logger() -> None:
     root_logger.setLevel(DEFAULT_LOGLEVEL)
 
 
-def log_to_file(log_file: str, log_rotation: bool) -> None:
+def log_to_file(log_file: Optional[str], log_rotation: bool) -> None:
     if log_file and log_file not in __loggingFiles:
         logger.debug(f"Logging to file '{log_file}'.")
         __loggingFiles.append(log_file)
@@ -257,7 +256,7 @@ def log_to_file(log_file: str, log_rotation: bool) -> None:
         root_logger.addHandler(handler)
 
 
-def set_logging_from_options(options: 'Config') -> None:
+def set_logging_from_options(options: Union["Config", Namespace]) -> None:
     configure_root_logger()
     options.logLevel = options.logLevel or logging.getLevelName(root_logger.getEffectiveLevel())
     set_log_level(options.logLevel)
@@ -286,7 +285,7 @@ def suppress_exotic_logging(local_logger: str) -> None:
     top_level_loggers: List[str] = []
 
     # Due to https://stackoverflow.com/questions/61683713
-    for pkg_logger in list(logging.Logger.manager.loggerDict.keys()) + always_suppress: # type: ignore
+    for pkg_logger in list(logging.Logger.manager.loggerDict.keys()) + always_suppress:
         if pkg_logger != local_logger:
             # many sub-loggers may exist, like "boto.a", "boto.b", "boto.c"; we only want the top_level: "boto"
             top_level_logger = pkg_logger.split('.')[0] if '.' in pkg_logger else pkg_logger

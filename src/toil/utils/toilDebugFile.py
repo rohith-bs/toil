@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Debug tool for copying files contained in a toil jobStore."""
+import argparse
 import logging
 import os.path
+from typing import Optional
 
 from toil.common import Config, Toil, parser_with_common_options
 from toil.jobStores.abstractJobStore import AbstractJobStore
-from toil.statsAndLogging import set_logging_from_options
 from toil.lib.resources import glob
-from toil.lib.expando import Expando
-from typing import Optional
+from toil.statsAndLogging import set_logging_from_options
 
 logger = logging.getLogger(__name__)
 
 
-def fetchJobStoreFiles(jobStore: AbstractJobStore, options: Expando) -> None:
+def fetchJobStoreFiles(jobStore: AbstractJobStore, options: argparse.Namespace) -> None:
     """
     Takes a list of file names as glob patterns, searches for these within a
     given directory, and attempts to take all of the files found and copy them
@@ -42,10 +42,10 @@ def fetchJobStoreFiles(jobStore: AbstractJobStore, options: Expando) -> None:
                             glob_pattern=jobStoreFile)
         for jobStoreFileID in jobStoreHits:
             logger.debug(f"Copying job store file: {jobStoreFileID} to {options.localFilePath[0]}")
-            jobStore.readFile(jobStoreFileID,
-                              os.path.join(options.localFilePath[0],
+            jobStore.read_file(jobStoreFileID,
+                               os.path.join(options.localFilePath[0],
                                            os.path.basename(jobStoreFileID)),
-                              symlink=options.useSymlinks)
+                               symlink=options.useSymlinks)
 
 
 def printContentsOfJobStore(jobStorePath: str, nameOfJob: Optional[str] = None) -> None:

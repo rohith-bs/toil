@@ -17,7 +17,7 @@ import os
 import threading
 import time
 import uuid
-from typing import Set, Optional
+from typing import Optional, Set
 
 import requests
 from libcloud.compute.drivers.gce import GCEFailedNode
@@ -48,7 +48,7 @@ class GCEProvisioner(AbstractProvisioner):
 
         # Call base class constructor, which will call createClusterSettings()
         # or readClusterSettings()
-        super(GCEProvisioner, self).__init__(clusterName, clusterType, zone, nodeStorage, nodeStorageOverrides)
+        super().__init__(clusterName, clusterType, zone, nodeStorage, nodeStorageOverrides)
 
     def supportedClusterTypes(self):
         return {'mesos'}
@@ -220,7 +220,7 @@ class GCEProvisioner(AbstractProvisioner):
         """ Not used by GCE """
         return False
 
-    def destroyCluster(self):
+    def destroyCluster(self) -> None:
         """
         Try a few times to terminate all of the instances in the group.
         """
@@ -237,12 +237,13 @@ class GCEProvisioner(AbstractProvisioner):
         instanceGroup.destroy()
 
     def terminateNodes(self, nodes):
-        nodeNames = [n.name for n in nodes]
-        instances = self._getNodesInCluster()
-        instancesToKill = [i for i in instances if i.name in nodeNames]
-        self._terminateInstances(instancesToKill)
+        if nodes:
+            nodeNames = [n.name for n in nodes]
+            instances = self._getNodesInCluster()
+            instancesToKill = [i for i in instances if i.name in nodeNames]
+            self._terminateInstances(instancesToKill)
 
-    def addNodes(self, nodeTypes: Set[str], numNodes, preemptable, spotBid=None):
+    def addNodes(self, nodeTypes: Set[str], numNodes, preemptable, spotBid=None) -> int:
         assert self._leaderPrivateIP
 
         # We don't support any balancing here so just pick one of the
@@ -314,7 +315,7 @@ class GCEProvisioner(AbstractProvisioner):
                     self._instanceGroup.add_instances([instance])
                     workersCreated += 1
                 except Exception as e:
-                    logger.error("Failed to configure worker %s. Error message: %s" % (node.name, e))
+                    logger.error(f"Failed to configure worker {node.name}. Error message: {e}")
                     failedWorkers.append(instance)
             if failedWorkers:
                 logger.error("Terminating %d failed workers" % len(failedWorkers))

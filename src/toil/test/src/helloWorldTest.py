@@ -13,11 +13,10 @@
 # limitations under the License.
 
 from toil.job import Job
-from toil.test import ToilTest, travis_test
+from toil.test import ToilTest
 
 
 class HelloWorldTest(ToilTest):
-    @travis_test
     def testHelloWorld(self):
         options = Job.Runner.getDefaultOptions(self._getTestJobStorePath())
         options.logLevel = "INFO"
@@ -33,7 +32,7 @@ class HelloWorld(Job):
 
 def childFn(job):
     with job.fileStore.writeGlobalFileStream() as (fH, fileID):
-        fH.write("Hello, World!".encode('utf-8'))
+        fH.write(b"Hello, World!")
         return fileID
 
 class FollowOn(Job):

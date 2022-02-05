@@ -17,11 +17,11 @@ from abc import ABCMeta, abstractmethod
 from datetime import datetime
 from queue import Empty, Queue
 from threading import Lock, Thread
-from typing import Any, List, Dict, Union, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from toil.batchSystems.abstractBatchSystem import (BatchJobExitReason,
-                                                   BatchSystemCleanupSupport,
                                                    UpdatedBatchJobInfo)
+from toil.batchSystems.cleanup_support import BatchSystemCleanupSupport
 from toil.lib.misc import CalledProcessErrorStderr
 
 logger = logging.getLogger(__name__)
@@ -335,7 +335,7 @@ class AbstractGridEngineBatchSystem(BatchSystemCleanupSupport):
             raise NotImplementedError()
 
     def __init__(self, config, maxCores, maxMemory, maxDisk):
-        super(AbstractGridEngineBatchSystem, self).__init__(
+        super().__init__(
             config, maxCores, maxMemory, maxDisk)
         self.config = config
 
@@ -369,10 +369,10 @@ class AbstractGridEngineBatchSystem(BatchSystemCleanupSupport):
             self.checkResourceRequest(jobDesc.memory, jobDesc.cores, jobDesc.disk)
             jobID = self.getNextJobID()
             self.currentJobs.add(jobID)
-            self.newJobsQueue.put((jobID, jobDesc.cores, jobDesc.memory, jobDesc.command, jobDesc.jobName,
+            self.newJobsQueue.put((jobID, jobDesc.cores, jobDesc.memory, jobDesc.command, jobDesc.unitName,
                                    job_environment))
             logger.debug("Issued the job command: %s with job id: %s and job name %s", jobDesc.command, str(jobID),
-                         jobDesc.jobName)
+                         jobDesc.unitName)
         return jobID
 
     def killBatchJobs(self, jobIDs):
@@ -434,7 +434,7 @@ class AbstractGridEngineBatchSystem(BatchSystemCleanupSupport):
             self.currentJobs.remove(item.jobID)
             return item
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """
         Signals worker to shutdown (via sentinel) then cleanly joins the thread
         """
@@ -448,7 +448,7 @@ class AbstractGridEngineBatchSystem(BatchSystemCleanupSupport):
     def setEnv(self, name, value=None):
         if value and ',' in value:
             raise ValueError(type(self).__name__ + " does not support commata in environment variable values")
-        return super(AbstractGridEngineBatchSystem, self).setEnv(name, value)
+        return super().setEnv(name, value)
 
     @classmethod
     def getWaitDuration(self):

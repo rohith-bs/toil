@@ -15,11 +15,11 @@ import datetime
 import json
 import logging
 import os
+import re
 import textwrap
+from typing import Any, Dict, List, Tuple, Union
 
 import requests
-
-from typing import Dict, List, Union, Tuple, Any
 
 logger = logging.getLogger(__name__)
 dirname = os.path.dirname(__file__)
@@ -44,15 +44,16 @@ EC2Regions = {'us-west-1': 'US West (N. California)',
               'sa-east-1': 'South America (Sao Paulo)'}
 
 
-class InstanceType(object):
-    __slots__ = ('name', 'cores', 'memory', 'disks', 'disk_capacity')
+class InstanceType:
+    __slots__ = ('name', 'cores', 'memory', 'disks', 'disk_capacity', 'architecture')
 
-    def __init__(self, name: str, cores: int, memory: float, disks: float, disk_capacity: float):
+    def __init__(self, name: str, cores: int, memory: float, disks: float, disk_capacity: float, architecture: str):
         self.name = name  # the API name of the instance type
         self.cores = cores  # the number of cores
         self.memory = memory  # RAM in GiB
         self.disks = disks  # the number of ephemeral (aka 'instance store') volumes
         self.disk_capacity = disk_capacity  # the capacity of each ephemeral volume in GiB
+        self.architecture = architecture # the architecture of the instance type. Can be either amd64 or arm64
 
     def __str__(self) -> str:
         return ("Type: {}\n"
@@ -60,12 +61,14 @@ class InstanceType(object):
                 "Disks: {}\n"
                 "Memory: {}\n"
                 "Disk Capacity: {}\n"
+                "Architecture: {}\n"
                 "".format(
                 self.name,
                 self.cores,
                 self.disks,
                 self.memory,
-                self.disk_capacity))
+                self.disk_capacity,
+                self.architecture))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, InstanceType):
@@ -74,7 +77,8 @@ class InstanceType(object):
             self.cores == other.cores and
             self.memory == other.memory and
             self.disks == other.disks and
-            self.disk_capacity == other.disk_capacity):
+            self.disk_capacity == other.disk_capacity and
+            self.architecture == other.architecture):
             return True
         return False
 
@@ -193,17 +197,23 @@ def fetchEC2InstanceDict(awsBillingJson: Dict[str, Any], region: str) -> Dict[st
             normal_use = i.get('usagetype').endswith('BoxUsage:' + i['instanceType'])  # not reserved or unused
             if normal_use:
                 disks, disk_capacity = parseStorage(v["attributes"]["storage"])
+
+                # Determines whether the instance type is from an ARM or AMD family
+                # ARM instance names include a digit followed by a 'g' before the instance size
+                architecture = 'arm64' if re.search(".*\dg.*\..*", i["instanceType"]) else 'amd64'
+
                 instance = InstanceType(name=i["instanceType"],
                                         cores=i["vcpu"],
                                         memory=parseMemory(i["memory"]),
                                         disks=disks,
-                                        disk_capacity=disk_capacity)
+                                        disk_capacity=disk_capacity,
+                                        architecture=architecture)
                 if instance in ec2InstanceList:
                     raise RuntimeError('EC2 JSON format has likely changed.  '
                                        'Duplicate instance {} found.'.format(instance))
                 ec2InstanceList.append(instance)
     print('Finished for ' + str(region) + '.  ' + str(len(ec2InstanceList)) + ' added.')
-    return dict((_.name, _) for _ in ec2InstanceList)
+    return {_.name: _ for _ in ec2InstanceList}
 
 
 def updateStaticEC2Instances() -> None:
@@ -234,7 +244,7 @@ def updateStaticEC2Instances() -> None:
     else:
         print('Reusing previously downloaded json @: ' + awsJsonIndex)
 
-    with open(awsJsonIndex, 'r') as f:
+    with open(awsJsonIndex) as f:
         awsProductDict = json.loads(f.read())
 
     currentEC2List = []
@@ -275,16 +285,16 @@ def updateStaticEC2Instances() -> None:
 
     # write the list of all instances types
     for i in sortedCurrentEC2List:
-        z = "    '{name}': InstanceType(name='{name}', cores={cores}, memory={memory}, disks={disks}, disk_capacity={disk_capacity})," \
-            "\n".format(name=i.name, cores=i.cores, memory=i.memory, disks=i.disks, disk_capacity=i.disk_capacity)
+        z = "    '{name}': InstanceType(name='{name}', cores={cores}, memory={memory}, disks={disks}, disk_capacity={disk_capacity}, architecture='{architecture}')," \
+            "\n".format(name=i.name, cores=i.cores, memory=i.memory, disks=i.disks, disk_capacity=i.disk_capacity, architecture=i.architecture)
         genString = genString + z
     genString = genString + '}\n\n'
 
     genString = genString + 'regionDict = {\n'
     for regionName, instanceList in instancesByRegion.items():
-        genString = genString + "              '{regionName}': [".format(regionName=regionName)
+        genString = genString + f"              '{regionName}': ["
         for instance in sorted(instanceList):
-            genString = genString + "'{instance}', ".format(instance=instance)
+            genString = genString + f"'{instance}', "
         if genString.endswith(', '):
             genString = genString[:-2]
         genString = genString + '],\n'

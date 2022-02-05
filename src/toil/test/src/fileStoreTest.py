@@ -18,9 +18,9 @@ import filecmp
 import inspect
 import logging
 import os
-import stat
 import random
 import signal
+import stat
 import time
 from abc import ABCMeta
 from struct import pack, unpack
@@ -36,7 +36,7 @@ from toil.job import Job
 from toil.jobStores.abstractJobStore import NoSuchFileException
 from toil.leader import FailedJobsException
 from toil.realtimeLogger import RealtimeLogger
-from toil.test import ToilTest, needs_aws_ec2, needs_google, slow, travis_test
+from toil.test import ToilTest, needs_aws_ec2, needs_google, slow
 
 # Some tests take too long on the AWS jobstore and are unquitable for CI.  They can be
 # be run during manual tests by setting this to False.
@@ -62,10 +62,10 @@ class hidden:
             if self.jobStoreType == 'file':
                 return self._getTestJobStorePath()
             elif self.jobStoreType == 'aws':
-                return 'aws:%s:cache-tests-%s' % (self.awsRegion(), str(uuid4()))
+                return 'aws:{}:cache-tests-{}'.format(self.awsRegion(), str(uuid4()))
             elif self.jobStoreType == 'google':
                 projectID = os.getenv('TOIL_GOOGLE_PROJECTID')
-                return 'google:%s:cache-tests-%s' % (projectID, str(uuid4()))
+                return 'google:{}:cache-tests-{}'.format(projectID, str(uuid4()))
             else:
                 raise RuntimeError('Illegal job store type.')
 
@@ -101,7 +101,6 @@ class hidden:
             return None
 
         # Sanity test
-        @travis_test
         def testToilIsNotBroken(self):
             """
             Runs a simple DAG to test if if any features other that caching were broken.
@@ -238,7 +237,7 @@ class hidden:
                                         raise
                                     logger.info('Correctly fail to local-delete non-local file: %s', fsID)
                                 else:
-                                    assert False, "Was able to delete non-local file {}".format(fsID)
+                                    assert False, f"Was able to delete non-local file {fsID}"
                             else:
                                 logger.info('Delete local file: %s', fsID)
                                 job.fileStore.deleteLocalFile(fsID)
@@ -406,9 +405,9 @@ class hidden:
             """
             if testingIsAutomatic and self.jobStoreType != 'file':
                 self.skipTest("To save time")
-            self.options.retryCount = 20
-            self.options.badWorker = 0.5
-            self.options.badWorkerFailInterval = 0.1
+            self.options.retryCount = 10
+            self.options.badWorker = 0.25
+            self.options.badWorkerFailInterval = 0.2
             for test in range(0, 20):
                 E = Job.wrapJobFn(self._uselessFunc)
                 F = Job.wrapJobFn(self._uselessFunc)
@@ -619,7 +618,7 @@ class hidden:
                 RealtimeLogger.info('Got %d for %s; expected %d', cacheInfoBytes, value, expectedBytes)
 
                 assert cacheInfoBytes == expectedBytes, 'Testing %s: Expected ' % value + \
-                                                  '%s but got %s.' % (expectedBytes, cacheInfoBytes)
+                                                  f'{expectedBytes} but got {cacheInfoBytes}.'
 
         @slow
         def testAsyncWriteWithCaching(self):
@@ -665,7 +664,7 @@ class hidden:
             job.fileStore.writeGlobalFile(testFile.name)
             job.fileStore.logToMaster('Writing copy 2 and saving ID')
             fsID = job.fileStore.writeGlobalFile(testFile.name)
-            job.fileStore.logToMaster('Copy 2 ID: {}'.format(fsID))
+            job.fileStore.logToMaster(f'Copy 2 ID: {fsID}')
 
             hidden.AbstractCachingFileStoreTest._readFromJobStoreWithoutAssertions(job, fsID)
 
@@ -686,7 +685,6 @@ class hidden:
 
         # writeGlobalFile tests
 
-        @travis_test
         def testWriteNonLocalFileToJobStore(self):
             """
             Write a file not in localTempDir to the job store.  Such a file should not be cached.
@@ -697,7 +695,6 @@ class hidden:
                               nonLocalDir=workdir)
             Job.Runner.startToil(A, self.options)
 
-        @travis_test
         def testWriteLocalFileToJobStore(self):
             """
             Write a file from the localTempDir to the job store.  Such a file will be cached by
@@ -708,7 +705,6 @@ class hidden:
 
         # readGlobalFile tests
 
-        @travis_test
         def testReadCacheMissFileFromJobStoreWithoutCachingReadFile(self):
             """
             Read a file from the file store that does not have a corresponding cached copy.  Do not
@@ -716,7 +712,6 @@ class hidden:
             """
             self._testCacheMissFunction(cacheReadFile=False)
 
-        @travis_test
         def testReadCacheMissFileFromJobStoreWithCachingReadFile(self):
             """
             Read a file from the file store that does not have a corresponding cached copy.  Cache
@@ -783,7 +778,6 @@ class hidden:
             else:
                 return outfile
 
-        @travis_test
         def testReadCachHitFileFromJobStore(self):
             """
             Read a file from the file store that has a corresponding cached copy.  Ensure the number
@@ -839,7 +833,7 @@ class hidden:
                 A.addChild(jobs[i])
                 jobs[i].addChild(B)
             Job.Runner.startToil(A, self.options)
-            with open(x.name, 'r') as y:
+            with open(x.name) as y:
                 assert int(y.read()) > 2
 
         @staticmethod
@@ -900,11 +894,11 @@ class hidden:
             with open(fileName, 'wb') as f:
                 f.write(os.urandom(1024 * 30000)) # 30 Mb
             outputFile = os.path.join(job.fileStore.getLocalTempDir(), 'exportedFile')
-            job.fileStore.exportFile(job.fileStore.writeGlobalFile(fileName), 'File://' + outputFile)
+            job.fileStore.export_file(job.fileStore.writeGlobalFile(fileName), 'File://' + outputFile)
             if not filecmp.cmp(fileName, outputFile):
                 logger.warning('Source file: %s', str(os.stat(fileName)))
                 logger.warning('Destination file: %s', str(os.stat(outputFile)))
-                raise RuntimeError("File {} did not properly get copied to {}".format(fileName, outputFile))
+                raise RuntimeError(f"File {fileName} did not properly get copied to {outputFile}")
 
         @slow
         def testFileStoreExportFile(self):
@@ -1209,7 +1203,6 @@ class hidden:
                 else:
                     break
 
-        @travis_test
         def testDeleteLocalFile(self):
             """
             Test the deletion capabilities of deleteLocalFile
@@ -1276,7 +1269,6 @@ class hidden:
             else:
                 raise RuntimeError("Managed to read a non-existent file")
 
-        @travis_test
         def testSimultaneousReadsUncachedStream(self):
             """
             Test many simultaneous read attempts on a file created via a stream
@@ -1299,9 +1291,9 @@ class hidden:
             Create and return a FileID for a non-cached file written via a stream.
             """
 
-            messageBytes = 'This is a test file\n'.encode('utf-8')
+            messageBytes = b'This is a test file\n'
 
-            with job.fileStore.jobStore.writeFileStream() as (out, idString):
+            with job.fileStore.jobStore.write_file_stream() as (out, idString):
                 # Write directly to the job store so the caching file store doesn't even see it.
                 # TODO: If we ever change how the caching file store does its IDs we will have to change this.
                 out.write(messageBytes)
