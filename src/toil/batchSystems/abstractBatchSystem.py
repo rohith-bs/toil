@@ -257,7 +257,7 @@ class AbstractBatchSystem(ABC):
 class BatchSystemSupport(AbstractBatchSystem):
     """Partial implementation of AbstractBatchSystem, support methods."""
 
-    def __init__(self, config: Config, maxCores: float, maxMemory: int, maxDisk: int) -> None:
+    def __init__(self, config: Config, maxCores: float, maxMemory: int, defaultPartition: str, maxDisk: int) -> None:
         """
         Initialize initial state of the object.
 
@@ -279,6 +279,7 @@ class BatchSystemSupport(AbstractBatchSystem):
         self.maxCores = maxCores
         self.maxMemory = maxMemory
         self.maxDisk = maxDisk
+        self.defaultPartition = defaultPartition
         self.environment: Dict[str, str] = {}
         if config.workflowID is None:
             raise Exception("config.workflowID must be set")
