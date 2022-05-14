@@ -149,7 +149,7 @@ class Requirer:
 
         :param dict requirements: Dict from string to number, string, or bool
             describing a set of resource requirments. 'cores', 'memory',
-            'disk', and 'preemptable' fields, if set, are parsed and broken out
+            'disk', 'partition' and 'preemptable' fields, if set, are parsed and broken out
             into properties. If unset, the relevant property will be
             unspecified, and will be pulled from the assigned Config object if
             queried (see :meth:`toil.job.Requirer.assignConfig`). If
@@ -327,6 +327,12 @@ class Requirer:
                 return value
             else:
                 raise TypeError(f"The '{name}' requirement does not accept values that are of type {type(value)}")
+        elif name == 'partition':
+            if isinstance(value, str):
+                # implement partition verification here
+                pass
+            else:
+                raise TypeError(f"The '{name}' requirement does not accept values that are of type {type(value)}")
         else:
             # Anything else we just pass along without opinons
             return cast(Union[int, float, bool], value)
@@ -403,7 +409,17 @@ class Requirer:
         self._requirementOverrides["preemptable"] = Requirer._parseResource(
             "preemptable", val
         )
+    
+    @property
+    def partition(self) -> bool:
+        """Whether a partition is permitted"""
+        return cast(str, self._fetchRequirement("partition"))
 
+    @partition.setter
+    def partition(self, val: Union[int, str, bool]) -> None:
+        self._requirementOverrides["partition"] = Requirer._parseResource(
+            "partition", val
+        )
 
 class JobDescription(Requirer):
     """
@@ -434,7 +450,7 @@ class JobDescription(Requirer):
 
         :param requirements: Dict from string to number, string, or bool
             describing the resource requirements of the job. 'cores', 'memory',
-            'disk', and 'preemptable' fields, if set, are parsed and broken out
+            'disk', 'partition' and 'preemptable' fields, if set, are parsed and broken out
             into properties. If unset, the relevant property will be
             unspecified, and will be pulled from the assigned Config object if
             queried (see :meth:`toil.job.Requirer.assignConfig`).
@@ -992,6 +1008,7 @@ class Job:
         memory: Optional[Union[int, str]] = None,
         cores: Optional[Union[int, float, str]] = None,
         disk: Optional[Union[int, str]] = None,
+        partition: Optional[str] = None,
         preemptable: Optional[Union[bool, int, str]] = None,
         unitName: Optional[str] = "",
         checkpoint: Optional[bool] = False,
@@ -1006,6 +1023,7 @@ class Job:
         :param memory: the maximum number of bytes of memory the job will require to run.
         :param cores: the number of CPU cores required.
         :param disk: the amount of local disk space required by the job, expressed in bytes.
+        :param partition: set slurm parittion for the job.
         :param preemptable: if the job can be run on a preemptable node.
         :param unitName: Human-readable name for this instance of the job.
         :param checkpoint: if any of this job's successor jobs completely fails,
@@ -1018,6 +1036,7 @@ class Job:
         :type memory: int or string convertible by toil.lib.conversions.human2bytes to an int
         :type cores: float, int, or string convertible by toil.lib.conversions.human2bytes to an int
         :type disk: int or string convertible by toil.lib.conversions.human2bytes to an int
+        :type partion: str
         :type preemptable: bool, int in {0, 1}, or string in {'false', 'true'} in any case
         :type unitName: str
         :type checkpoint: bool
@@ -1030,6 +1049,7 @@ class Job:
 
         # Build a requirements dict for the description
         requirements = {'memory': memory, 'cores': cores, 'disk': disk,
+                        'partition': partition,
                         'preemptable': preemptable}
         if descriptionClass is None:
             if checkpoint:
@@ -1141,6 +1161,18 @@ class Job:
     @cores.setter
     def cores(self, val):
          self.description.cores = val
+
+    @property
+    def partition(self):
+        """
+        The slurm partiton to run on.
+
+       :rtype: str
+        """
+        return self.description.partition
+    @partition.setter
+    def partition(self, val):
+         self.description.partition = val
 
     @property
     def preemptable(self):
@@ -2445,7 +2477,7 @@ class FunctionWrappingJob(Job):
         :param callable userFunction: The function to wrap. It will be called with ``*args`` and
                ``**kwargs`` as arguments.
 
-        The keywords ``memory``, ``cores``, ``disk``, ``preemptable`` and ``checkpoint`` are
+        The keywords ``memory``, ``cores``, ``disk``, ``partition``, ``preemptable`` and ``checkpoint`` are
         reserved keyword arguments that if specified will be used to determine the resources
         required for the job, as :func:`toil.job.Job.__init__`. If they are keyword arguments to
         the function they will be extracted from the function definition, but may be overridden
@@ -2479,6 +2511,7 @@ class FunctionWrappingJob(Job):
         super().__init__(memory=resolve('memory', dehumanize=True),
                          cores=resolve('cores', dehumanize=True),
                          disk=resolve('disk', dehumanize=True),
+                         partition=resolve('partition'),
                          preemptable=resolve('preemptable'),
                          checkpoint=resolve('checkpoint', default=False),
                          unitName=resolve('name', default=None))
@@ -2525,10 +2558,11 @@ class JobFunctionWrappingJob(FunctionWrappingJob):
         - memory
         - disk
         - cores
+        - partition
 
     For example to wrap a function into a job we would call::
 
-        Job.wrapJobFn(myJob, memory='100k', disk='1M', cores=0.1)
+        Job.wrapJobFn(myJob, memory='100k', disk='1M', cores=0.1, partition="high-memory-on-demand")
 
     """
 

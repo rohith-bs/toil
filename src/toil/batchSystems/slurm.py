@@ -58,11 +58,12 @@ class SlurmBatchSystem(AbstractGridEngineBatchSystem):
         def prepareSubmission(self,
                               cpu: int,
                               memory: int,
+                              partiton: str,
                               jobID: int,
                               command: str,
                               jobName: str,
                               job_environment: Optional[Dict[str, str]] = None) -> List[str]:
-            return self.prepareSbatch(cpu, memory, jobID, jobName, job_environment) + [f'--wrap={command}']
+            return self.prepareSbatch(cpu, memory, partiton,  jobID, jobName, job_environment) + [f'--wrap={command}']
 
         def submitJob(self, subLine):
             try:
@@ -260,6 +261,7 @@ class SlurmBatchSystem(AbstractGridEngineBatchSystem):
         def prepareSbatch(self,
                           cpu: int,
                           mem: int,
+                          partition: str,
                           jobID: int,
                           jobName: str,
                           job_environment: Optional[Dict[str, str]]) -> List[str]:
@@ -286,6 +288,9 @@ class SlurmBatchSystem(AbstractGridEngineBatchSystem):
                 sbatch_line.append(f'--mem={math.ceil(mem / 2 ** 20)}')
             if cpu is not None:
                 sbatch_line.append(f'--cpus-per-task={math.ceil(cpu)}')
+            
+            if partition is not None:
+                sbatch_line.append(f'--partition={partition}')
 
             stdoutfile: str = self.boss.formatStdOutErrPath(jobID, '%j', 'out')
             stderrfile: str = self.boss.formatStdOutErrPath(jobID, '%j', 'err')

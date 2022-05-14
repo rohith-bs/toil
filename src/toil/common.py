@@ -154,6 +154,7 @@ class Config:
         self.defaultDisk: int = 2147483648
         self.readGlobalFileMutableByDefault: bool = False
         self.defaultPreemptable: bool = False
+        self.defaultSlurmPartition = None
         self.maxCores: int = SYS_MAX_SIZE
         self.maxMemory: int = SYS_MAX_SIZE
         self.maxDisk: int = SYS_MAX_SIZE
@@ -351,6 +352,7 @@ class Config:
         set_option("maxMemory", h2b, iC(1))
         set_option("maxDisk", h2b, iC(1))
         set_option("defaultPreemptable")
+        set_option("defaultSlurmPartition")
 
         # Retrying/rescuing jobs
         set_option("retryCount", int, iC(1))
@@ -654,6 +656,8 @@ def addOptions(parser: ArgumentParser, config: Optional[Config] = None) -> None:
                                   help=resource_help_msg.format('max', 'memory', disk_mem_note, bytes2human(config.maxMemory)))
     resource_options.add_argument('--maxDisk', dest='maxDisk', default=None, metavar='INT',
                                   help=resource_help_msg.format('max', 'disk', disk_mem_note, bytes2human(config.maxDisk)))
+    resource_options.add_argument('--defaultSlurmPartition', dest='defaultSlurmPartition', default=None, metavar='STR', type=str, nargs="?", const=True,
+                                  help="Set default partition for all jobs.")
 
     # Retrying/rescuing jobs
     job_options = parser.add_argument_group(
@@ -1059,7 +1063,8 @@ class Toil(ContextManager["Toil"]):
         kwargs = dict(config=config,
                       maxCores=config.maxCores,
                       maxMemory=config.maxMemory,
-                      maxDisk=config.maxDisk)
+                      maxDisk=config.maxDisk,
+                      defaultSlurmParttion=config.defaultSlurmParttion)
 
         from toil.batchSystems.registry import BATCH_SYSTEM_FACTORY_REGISTRY
 
