@@ -427,6 +427,7 @@ class JobDescription(Requirer):
         unitName: str = "",
         displayName: str = "",
         command: Optional[str] = None,
+        partition: Optional[str] = None,
     ) -> None:
         """
         Create a new JobDescription.
@@ -456,6 +457,7 @@ class JobDescription(Requirer):
         self.jobName = makeString(jobName)
         self.unitName = makeString(unitName)
         self.displayName = makeString(displayName)
+        self.partition = makeString(partition)
 
         # Set properties that are not fully filled in on creation.
 
@@ -1043,7 +1045,7 @@ class Job:
         # Create the JobDescription that owns all the scheduling information.
         # Make it with a temporary ID until we can be assigned a real one by
         # the JobStore.
-        self._description = descriptionClass(requirements, jobName, unitName=unitName, displayName=displayName)
+        self._description = descriptionClass(requirements, jobName, unitName=unitName, displayName=displayName, partition=partition)
 
         # Private class variables needed to actually execute a job, in the worker.
         # Also needed for setting up job graph structures before saving to the JobStore.
