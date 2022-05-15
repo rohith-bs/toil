@@ -881,10 +881,10 @@ class Leader:
             # so increment this value after the job is added to the issuedJob dict
             self.preemptableJobsIssued += 1
         cur_logger = logger.debug if jobNode.jobName.startswith(CWL_INTERNAL_JOBS) else logger.info
-        cur_logger("Issued job %s with job batch system ID: "
-                   "%s and cores: %s, disk: %s, memory: %s and partition: %s",
-                   jobNode, str(jobBatchSystemID), int(jobNode.cores),
-                   bytes2human(jobNode.disk), bytes2human(jobNode.memory), jobNode.partition)
+        msg = f"""Issued job {jobNode} with job batch system ID: {jobBatchSystemID} and cores: {jobNode.cores}, disk: {jobNode.disk}, memory: {jobNode.memory}"""
+        if jobNode.partition:
+            msg += f" in {jobNode.partition} partition"
+        cur_logger(msg)
         if self.toilMetrics:
             self.toilMetrics.logIssuedJob(jobNode)
             self.toilMetrics.logQueueSize(self.getNumberOfJobsIssued())

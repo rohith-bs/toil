@@ -149,7 +149,7 @@ class Requirer:
 
         :param dict requirements: Dict from string to number, string, or bool
             describing a set of resource requirments. 'cores', 'memory',
-            'disk', 'partition' and 'preemptable' fields, if set, are parsed and broken out
+            'disk' and 'preemptable' fields, if set, are parsed and broken out
             into properties. If unset, the relevant property will be
             unspecified, and will be pulled from the assigned Config object if
             queried (see :meth:`toil.job.Requirer.assignConfig`). If
@@ -327,12 +327,6 @@ class Requirer:
                 return value
             else:
                 raise TypeError(f"The '{name}' requirement does not accept values that are of type {type(value)}")
-        elif name == 'partition':
-            if isinstance(value, str):
-                # implement partition verification here
-                pass
-            else:
-                raise TypeError(f"The '{name}' requirement does not accept values that are of type {type(value)}")
         else:
             # Anything else we just pass along without opinons
             return cast(Union[int, float, bool], value)
@@ -409,17 +403,6 @@ class Requirer:
         self._requirementOverrides["preemptable"] = Requirer._parseResource(
             "preemptable", val
         )
-    
-    @property
-    def partition(self) -> bool:
-        """Whether a partition is permitted"""
-        return cast(str, self._fetchRequirement("partition"))
-
-    @partition.setter
-    def partition(self, val: Union[int, str, bool]) -> None:
-        self._requirementOverrides["partition"] = Requirer._parseResource(
-            "partition", val
-        )
 
 class JobDescription(Requirer):
     """
@@ -450,7 +433,7 @@ class JobDescription(Requirer):
 
         :param requirements: Dict from string to number, string, or bool
             describing the resource requirements of the job. 'cores', 'memory',
-            'disk', 'partition' and 'preemptable' fields, if set, are parsed and broken out
+            'disk' and 'preemptable' fields, if set, are parsed and broken out
             into properties. If unset, the relevant property will be
             unspecified, and will be pulled from the assigned Config object if
             queried (see :meth:`toil.job.Requirer.assignConfig`).
@@ -1008,8 +991,8 @@ class Job:
         memory: Optional[Union[int, str]] = None,
         cores: Optional[Union[int, float, str]] = None,
         disk: Optional[Union[int, str]] = None,
-        partition: Optional[str] = None,
         preemptable: Optional[Union[bool, int, str]] = None,
+        partition: Optional[str] = None,
         unitName: Optional[str] = "",
         checkpoint: Optional[bool] = False,
         displayName: Optional[str] = "",
@@ -1049,7 +1032,6 @@ class Job:
 
         # Build a requirements dict for the description
         requirements = {'memory': memory, 'cores': cores, 'disk': disk,
-                        'partition': partition,
                         'preemptable': preemptable}
         if descriptionClass is None:
             if checkpoint:
@@ -1161,18 +1143,6 @@ class Job:
     @cores.setter
     def cores(self, val):
          self.description.cores = val
-
-    @property
-    def partition(self):
-        """
-        The slurm partiton to run on.
-
-       :rtype: str
-        """
-        return self.description.partition
-    @partition.setter
-    def partition(self, val):
-         self.description.partition = val
 
     @property
     def preemptable(self):
@@ -2511,7 +2481,7 @@ class FunctionWrappingJob(Job):
         super().__init__(memory=resolve('memory', dehumanize=True),
                          cores=resolve('cores', dehumanize=True),
                          disk=resolve('disk', dehumanize=True),
-                         partition=resolve('partition'),
+                         partition=resolve('partition', default=None),
                          preemptable=resolve('preemptable'),
                          checkpoint=resolve('checkpoint', default=False),
                          unitName=resolve('name', default=None))
@@ -2558,11 +2528,10 @@ class JobFunctionWrappingJob(FunctionWrappingJob):
         - memory
         - disk
         - cores
-        - partition
 
     For example to wrap a function into a job we would call::
 
-        Job.wrapJobFn(myJob, memory='100k', disk='1M', cores=0.1, partition="high-memory-on-demand")
+        Job.wrapJobFn(myJob, memory='100k', disk='1M', cores=0.1)
 
     """
 

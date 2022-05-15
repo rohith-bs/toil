@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 class BatchSystemLocalSupport(BatchSystemSupport):
     """Adds a local queue for helper jobs, useful for CWL & others."""
 
-    def __init__(self, config: Config, maxCores: float, maxMemory: int, defaultPartition: str, maxDisk: int) -> None:
-        super().__init__(config, maxCores, maxMemory, defaultPartition, maxDisk)
+    def __init__(self, config: Config, maxCores: float, maxMemory: int, maxDisk: int) -> None:
+        super().__init__(config, maxCores, maxMemory, maxDisk)
         self.localBatch: SingleMachineBatchSystem = SingleMachineBatchSystem(
             config, config.maxLocalJobs, maxMemory, maxDisk
         )

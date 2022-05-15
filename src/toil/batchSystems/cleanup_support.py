@@ -43,8 +43,8 @@ class BatchSystemCleanupSupport(BatchSystemLocalSupport):
         contexts.append(context)
         return contexts
 
-    def __init__(self, config: Config, maxCores: float, maxMemory: int, defaultPartition: str, maxDisk: int) -> None:
-        super().__init__(config, maxCores, maxMemory, defaultPartition, maxDisk)
+    def __init__(self, config: Config, maxCores: float, maxMemory: int, maxDisk: int) -> None:
+        super().__init__(config, maxCores, maxMemory, maxDisk)
 
 class WorkerCleanupContext:
     """
