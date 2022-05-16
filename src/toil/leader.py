@@ -882,8 +882,10 @@ class Leader:
             self.preemptableJobsIssued += 1
         cur_logger = logger.debug if jobNode.jobName.startswith(CWL_INTERNAL_JOBS) else logger.info
         msg = f"""Issued job {jobNode} with job batch system ID: {jobBatchSystemID} and cores: {jobNode.cores}, disk: {jobNode.disk}, memory: {jobNode.memory}"""
-        if jobNode.partition:
-            msg += f" in {jobNode.partition} partition"
+        if jobNode.slurm_partition:
+            msg += f" in {jobNode.slurm_partition} slurm_partition"
+        if jobNode.comment:
+            msg += f" with tag: {jobNode.comment}"
         cur_logger(msg)
         if self.toilMetrics:
             self.toilMetrics.logIssuedJob(jobNode)

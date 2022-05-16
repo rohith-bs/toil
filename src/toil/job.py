@@ -427,7 +427,8 @@ class JobDescription(Requirer):
         unitName: str = "",
         displayName: str = "",
         command: Optional[str] = None,
-        partition: Optional[str] = None,
+        slurm_partition: Optional[str] = None,
+        comment: Optional[str] = None,
     ) -> None:
         """
         Create a new JobDescription.
@@ -457,7 +458,8 @@ class JobDescription(Requirer):
         self.jobName = makeString(jobName)
         self.unitName = makeString(unitName)
         self.displayName = makeString(displayName)
-        self.partition = makeString(partition)
+        self.slurm_partition = makeString(slurm_partition)
+        self.comment = makeString(comment)
 
         # Set properties that are not fully filled in on creation.
 
@@ -994,7 +996,8 @@ class Job:
         cores: Optional[Union[int, float, str]] = None,
         disk: Optional[Union[int, str]] = None,
         preemptable: Optional[Union[bool, int, str]] = None,
-        partition: Optional[str] = None,
+        slurm_partition: Optional[str] = None,
+        comment: Optional[str] = None,
         unitName: Optional[str] = "",
         checkpoint: Optional[bool] = False,
         displayName: Optional[str] = "",
@@ -1008,7 +1011,8 @@ class Job:
         :param memory: the maximum number of bytes of memory the job will require to run.
         :param cores: the number of CPU cores required.
         :param disk: the amount of local disk space required by the job, expressed in bytes.
-        :param partition: set slurm parittion for the job.
+        :param slurm_partition: set slurm parittion for the job.
+        :param comment: add comment to job
         :param preemptable: if the job can be run on a preemptable node.
         :param unitName: Human-readable name for this instance of the job.
         :param checkpoint: if any of this job's successor jobs completely fails,
@@ -1045,7 +1049,7 @@ class Job:
         # Create the JobDescription that owns all the scheduling information.
         # Make it with a temporary ID until we can be assigned a real one by
         # the JobStore.
-        self._description = descriptionClass(requirements, jobName, unitName=unitName, displayName=displayName, partition=partition)
+        self._description = descriptionClass(requirements, jobName, unitName=unitName, displayName=displayName, slurm_partition=slurm_partition, comment=comment)
 
         # Private class variables needed to actually execute a job, in the worker.
         # Also needed for setting up job graph structures before saving to the JobStore.
@@ -2449,7 +2453,7 @@ class FunctionWrappingJob(Job):
         :param callable userFunction: The function to wrap. It will be called with ``*args`` and
                ``**kwargs`` as arguments.
 
-        The keywords ``memory``, ``cores``, ``disk``, ``partition``, ``preemptable`` and ``checkpoint`` are
+        The keywords ``memory``, ``cores``, ``disk``, ``slurm_partition``, ``comment``, ``preemptable`` and ``checkpoint`` are
         reserved keyword arguments that if specified will be used to determine the resources
         required for the job, as :func:`toil.job.Job.__init__`. If they are keyword arguments to
         the function they will be extracted from the function definition, but may be overridden
@@ -2483,7 +2487,8 @@ class FunctionWrappingJob(Job):
         super().__init__(memory=resolve('memory', dehumanize=True),
                          cores=resolve('cores', dehumanize=True),
                          disk=resolve('disk', dehumanize=True),
-                         partition=resolve('partition', default=None),
+                         slurm_partition=resolve('slurm_partition', default=None),
+                         comment=resolve("comment", default=None),
                          preemptable=resolve('preemptable'),
                          checkpoint=resolve('checkpoint', default=False),
                          unitName=resolve('name', default=None))

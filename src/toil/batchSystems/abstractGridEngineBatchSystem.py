@@ -107,10 +107,10 @@ class AbstractGridEngineBatchSystem(BatchSystemCleanupSupport):
             while len(self.waitingJobs) > 0 and \
                     len(self.runningJobs) < int(self.boss.config.maxLocalJobs):
                 activity = True
-                jobID, cpu, memory, partition, command, jobName, environment = self.waitingJobs.pop(0)
+                jobID, cpu, memory, slurm_partition, comment, command, jobName, environment = self.waitingJobs.pop(0)
 
                 # prepare job submission command
-                subLine = self.prepareSubmission(cpu, memory, partition, jobID, command, jobName, environment)
+                subLine = self.prepareSubmission(cpu, memory, slurm_partition, comment, jobID, command, jobName, environment)
                 logger.debug("Running %r", subLine)
                 batchJobID = self.boss.with_retries(self.submitJob, subLine)
                 logger.debug("Submitted job %s", str(batchJobID))
@@ -268,7 +268,8 @@ class AbstractGridEngineBatchSystem(BatchSystemCleanupSupport):
         def prepareSubmission(self,
                               cpu: int,
                               memory: int,
-                              partition: str,
+                              slurm_partition: str,
+                              comment: str,
                               jobID: int,
                               command: str,
                               jobName: str,
@@ -370,10 +371,11 @@ class AbstractGridEngineBatchSystem(BatchSystemCleanupSupport):
             self.checkResourceRequest(jobDesc.memory, jobDesc.cores, jobDesc.disk)
             jobID = self.getNextJobID()
             self.currentJobs.add(jobID)
-            self.newJobsQueue.put((jobID, jobDesc.cores, jobDesc.memory, jobDesc.partition, jobDesc.command, jobDesc.unitName,
+            self.newJobsQueue.put((jobID, jobDesc.cores, jobDesc.memory, jobDesc.slurm_partition, jobDesc.comment, jobDesc.command, jobDesc.unitName,
                                    job_environment))
-            logger.debug("Issued the job command: %s with job id: %s and job name %s in partition %s", jobDesc.command, str(jobID),
-                         jobDesc.unitName, jobDesc.partition)
+            logger.debug(
+                "Issued the job command: %s with job id: %s and job name %s in slurm_partition %s with comment %s", 
+                jobDesc.command, str(jobID), jobDesc.unitName, jobDesc.slurm_partition, jobDesc.comment)
         return jobID
 
     def killBatchJobs(self, jobIDs):

@@ -261,7 +261,8 @@ class SlurmBatchSystem(AbstractGridEngineBatchSystem):
         def prepareSbatch(self,
                           cpu: int,
                           mem: int,
-                          partition: str,
+                          slurm_partition: str,
+                          comment: str,
                           jobID: int,
                           jobName: str,
                           job_environment: Optional[Dict[str, str]]) -> List[str]:
@@ -288,9 +289,20 @@ class SlurmBatchSystem(AbstractGridEngineBatchSystem):
                 sbatch_line.append(f'--mem={math.ceil(mem / 2 ** 20)}')
             if cpu is not None:
                 sbatch_line.append(f'--cpus-per-task={math.ceil(cpu)}')
+            available_partitons = os.popen(
+                    """
+                    scontrol show partition -o |
+                    cut -d' ' -f1 |
+                    cut -d'-' -f2
+                    """
+                ).read().strip().split()
+            if slurm_partition is not None and slurm_partition in available_partitons:
+                sbatch_line.append(f'--slurm_partition={slurm_partition}')
+            else:
+                logger.warning("Invalid SLURM partition speficied: %s, using default.", slurm_partition)
             
-            if partition is not None:
-                sbatch_line.append(f'--partition={partition}')
+            if comment is not None:
+                sbatch_line.append(f"--comment={comment}")
 
             stdoutfile: str = self.boss.formatStdOutErrPath(jobID, '%j', 'out')
             stderrfile: str = self.boss.formatStdOutErrPath(jobID, '%j', 'err')
