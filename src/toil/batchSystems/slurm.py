@@ -59,11 +59,12 @@ class SlurmBatchSystem(AbstractGridEngineBatchSystem):
                               cpu: int,
                               memory: int,
                               partiton: str,
+                              comment: str,
                               jobID: int,
                               command: str,
                               jobName: str,
                               job_environment: Optional[Dict[str, str]] = None) -> List[str]:
-            return self.prepareSbatch(cpu, memory, partiton,  jobID, jobName, job_environment) + [f'--wrap={command}']
+            return self.prepareSbatch(cpu, memory, partiton, comment, jobID, jobName, job_environment) + [f'--wrap={command}']
 
         def submitJob(self, subLine):
             try:
