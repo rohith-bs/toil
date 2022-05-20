@@ -290,14 +290,14 @@ class SlurmBatchSystem(AbstractGridEngineBatchSystem):
                 sbatch_line.append(f'--mem={math.ceil(mem / 2 ** 20)}')
             if cpu is not None:
                 sbatch_line.append(f'--cpus-per-task={math.ceil(cpu)}')
-            available_partitons = os.popen(
+            available_partitions = os.popen(
                     """
                     scontrol show partition -o |
                     cut -d' ' -f1 |
-                    cut -d'-' -f2
+                    cut -d'=' -f2
                     """
                 ).read().strip().split()
-            if slurm_partition is not None and slurm_partition in available_partitons:
+            if slurm_partition is not None and slurm_partition in available_partitions:
                 sbatch_line.append(f'--slurm_partition={slurm_partition}')
             else:
                 logger.warning("Invalid SLURM partition speficied: %s, using default.", slurm_partition)
