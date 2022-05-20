@@ -298,7 +298,7 @@ class SlurmBatchSystem(AbstractGridEngineBatchSystem):
                     """
                 ).read().strip().split()
             if slurm_partition is not None and slurm_partition in available_partitions:
-                sbatch_line.append(f'--slurm_partition={slurm_partition}')
+                sbatch_line.append(f'--partition={slurm_partition}')
             else:
                 logger.warning("Invalid SLURM partition speficied: %s, using default.", slurm_partition)
             
